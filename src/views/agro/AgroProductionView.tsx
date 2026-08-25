@@ -2,28 +2,42 @@ import React, { useState } from 'react';
 import { useApp } from '../../store';
 import { Factory, ShieldAlert, AlertOctagon } from 'lucide-react';
 
+/** Attrape les erreurs métier lancées par le store (sinon : promesse rejetée non gérée). */
+const guard = async (fn: () => Promise<void>, onError?: (msg: string) => void) => {
+  try {
+    await fn();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Opération impossible.';
+    (onError ?? ((m: string) => alert(m)))(msg);
+  }
+};
+
 export function AgroProductionView() {
   const { currentUser, currentRole, agroLotProductions, agroLotMatierePremieres, agroCreateLotProduction, agroUpdateProductionStatus, agroAddControleProcess } = useApp();
   const [showNew, setShowNew] = useState(false);
-  
+
   const mps = agroLotMatierePremieres.filter(m => m.statut === 'en_stock');
-  
+
   const [newProd, setNewProd] = useState({ nom_produit: '', date_fabrication: new Date().toISOString().split('T')[0], quantite_produite: 0, unite: 'kg', lots_matiere_premiere_utilises: [] as {lot_id: string, quantite_utilisee: number}[] });
 
   const handleCreate = async () => {
-    await agroCreateLotProduction({ ...newProd, responsable_production_id: currentUser?.id || '1' });
-    setShowNew(false);
+    await guard(async () => {
+      await agroCreateLotProduction({ ...newProd, responsable_production_id: currentUser?.id || '1' });
+      setShowNew(false);
+    });
   };
 
   const handleControle = async (lot_id: string, isConforme: boolean) => {
     const point = prompt('Point de contrôle (ex: CCP1 Température):');
     if (!point) return;
-    await agroAddControleProcess({
-      lot_production_id: lot_id,
-      point_de_controle: point,
-      date: new Date().toISOString(),
-      resultat: isConforme ? 'conforme' : 'non_conforme',
-      controleur_id: currentUser?.id || '1'
+    await guard(async () => {
+      await agroAddControleProcess({
+        lot_production_id: lot_id,
+        point_de_controle: point,
+        date: new Date().toISOString(),
+        resultat: isConforme ? 'conforme' : 'non_conforme',
+        controleur_id: currentUser?.id || '1'
+      });
     });
   };
 
@@ -92,7 +106,7 @@ export function AgroProductionView() {
               </div>
               <div className="flex flex-col gap-2">
                 {lot.statut === 'planifié' && ['RESP_PRODUCTION', 'GERANT'].includes(currentRole || '') && (
-                  <button onClick={() => agroUpdateProductionStatus(lot.id_lot, 'en_production')} className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded text-sm hover:bg-indigo-200">Démarrer Prod</button>
+                  <button onClick={() => guard(async () => { await agroUpdateProductionStatus(lot.id_lot, 'en_production'); })} className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded text-sm hover:bg-indigo-200">Démarrer Prod</button>
                 )}
                 {lot.statut === 'en_production' && (
                   <>
@@ -104,20 +118,20 @@ export function AgroProductionView() {
                       </div>
                     )}
                     {['RESP_PRODUCTION', 'GERANT'].includes(currentRole || '') && (
-                      <button onClick={() => agroUpdateProductionStatus(lot.id_lot, 'conditionné')} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 mt-2">Terminer Process</button>
+                      <button onClick={() => guard(async () => { await agroUpdateProductionStatus(lot.id_lot, 'conditionné'); })} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 mt-2">Terminer Process</button>
                     )}
                   </>
                 )}
                 {lot.statut === 'bloqué' && ['RESP_QUALITE'].includes(currentRole || '') && (
                   <button onClick={() => {
                     const dec = prompt("Saisissez la décision de déblocage (déclassement, destruction...) :");
-                    if (dec) agroUpdateProductionStatus(lot.id_lot, 'conditionné', dec);
+                    if (dec) guard(async () => { await agroUpdateProductionStatus(lot.id_lot, 'conditionné', dec); });
                   }} className="px-3 py-1 bg-red-600 text-white flex items-center gap-1 rounded text-sm hover:bg-red-700">
                     <AlertOctagon className="w-4 h-4" /> Débloquer le lot
                   </button>
                 )}
                 {lot.statut === 'conditionné' && ['RESP_QUALITE'].includes(currentRole || '') && (
-                  <button onClick={() => agroUpdateProductionStatus(lot.id_lot, 'disponible_à_la_vente')} className="px-3 py-1 bg-green-600 text-white flex items-center gap-1 rounded text-sm hover:bg-green-700">
+                  <button onClick={() => guard(async () => { await agroUpdateProductionStatus(lot.id_lot, 'disponible_à_la_vente'); })} className="px-3 py-1 bg-green-600 text-white flex items-center gap-1 rounded text-sm hover:bg-green-700">
                     <ShieldAlert className="w-4 h-4" /> Libérer pour la Vente
                   </button>
                 )}

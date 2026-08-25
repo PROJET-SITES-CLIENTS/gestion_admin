@@ -140,7 +140,9 @@ class RhController {
     // Congés
     // ------------------------------------------------------------------
     public function createLeaveRequest(Request $request) {
-        AuthMiddleware::authenticate($request);
+        // Cohérence avec la visibilité des données (GET /api/data ne renvoie
+        // les congés qu'aux rôles GERANT/RH) : la création est réservée aux mêmes rôles.
+        AuthMiddleware::authorize($request, ...self::ROLES_RH);
         $body = $request->getBody();
 
         $employeeId = Sanitizer::text($body['employeeId'] ?? '', 64);

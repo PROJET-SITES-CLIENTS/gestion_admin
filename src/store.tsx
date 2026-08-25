@@ -249,7 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const n = await res.json();
         setNotifications(prev => [...prev, n]);
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const addTask = async (receiverRole: Role | 'ALL', title: string, content: string, priority: 'LOW'|'MEDIUM'|'HIGH' = 'MEDIUM', link?: string) => {
@@ -280,7 +280,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const t = await res.json();
         setTasks(prev => [...prev, t]);
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   useEffect(() => {
@@ -320,13 +320,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTreasuryAccounts(data.treasury_accounts || []);
         setTransactions(data.transactions || []);
         
-        // Timeout & Escalade (48h)
+        // Timeout & Escalade (48h) — l'escalade est PERSISTÉE serveur,
+        // sinon elle était recalculée (et perdue) à chaque rafraîchissement.
         const rawTasks = data.tasks || [];
         const now = new Date();
         const processedTasks = rawTasks.map((t: Task) => {
           if (t.status === 'TODO' && t.priority === 'HIGH' && !t.escalated) {
             const ageHours = (now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60);
             if (ageHours > 48) {
+              apiFetch(`/tasks/${t.id}/update`, { method: 'POST', body: JSON.stringify({ escalated: true }) }).catch(() => {});
               return { ...t, escalated: true };
             }
           }
@@ -374,7 +376,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const d = await res.json();
         if (d.success && d.users) setSystemUsers(d.users);
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const createUser = async (username: string, password: string, role: string, firstName: string, lastName: string) => {
@@ -459,7 +461,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(updates)
       });
       fetchData();
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const sendMessage = async (receiverRole: Role | 'ALL', content: string, attachment?: any) => {
@@ -506,7 +508,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setProjects(prev => [...prev, { ...p, status: determineStatus(p) }]);
         return p.id;
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
     return undefined;
   };
 
@@ -685,7 +687,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProjects(prev => prev.filter(p => p.id !== id));
     try {
       await apiFetch(`/projects/${id}/delete`, { method: 'POST' });
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const cancelProject = async (id: string) => {
@@ -715,7 +717,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setExpenses(prev => [...prev, e]);
         await addNotification('COMPTABLE', `Une nouvelle dépense de ${expense.amountTTC.toLocaleString()} GNF a été soumise pour validation.`, 'INFO');
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const updateExpenseStatus = async (id: string, status: 'PENDING' | 'PAID' | 'REJECTED', reason?: string) => {
@@ -729,14 +731,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (status === 'PAID') {
         await addNotification('ALL', `La note de frais de ${exp.amountTTC.toLocaleString()} GNF a été payée.`, 'SUCCESS');
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const deleteExpense = async (id: string) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
     try {
       await apiFetch(`/expenses/${id}/delete`, { method: 'POST' });
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const updateCompanyConfig = async (config: CompanyConfig) => {
@@ -746,7 +748,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: 'POST',
         body: JSON.stringify(config)
       });
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const fetchProspects = async () => {};
@@ -761,7 +763,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const p = await res.json();
         setProspects(prev => [...prev, p]);
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
     return undefined;
   };
 
@@ -775,14 +777,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const updatedP = await res.json();
         setProspects(prev => prev.map(p => p.id === id ? updatedP : p));
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const deleteProspect = async (id: string) => {
     setProspects(prev => prev.filter(p => p.id !== id));
     try {
       await apiFetch(`/prospects/${id}/delete`, { method: 'POST' });
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const convertProspectToProject = async (id: string) => {
@@ -810,7 +812,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         return newProj.id;
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
     return undefined;
   };
 
@@ -822,7 +824,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const d = await res.json();
         setEmployees(prev => [...prev, d]);
       }
-    } catch (e) {}
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   const addContract = async (ctr: any) => {
@@ -832,7 +834,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const d = await res.json();
         setContracts(prev => [...prev, d]);
       }
-    } catch (e) {}
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   const addLeaveRequest = async (lr: any) => {
@@ -843,7 +845,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLeaveRequests(prev => [...prev, d]);
         await addNotification('GERANT', `Une nouvelle demande de congé a été soumise.`, 'INFO');
       }
-    } catch (e) {}
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   const updateLeaveRequestStatus = async (id: string, status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => {
@@ -855,7 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (status === 'APPROVED') {
         await addNotification('ALL', `Une demande de congé a été approuvée.`, 'SUCCESS');
       }
-    } catch (e) {}
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   const registerSalaryAdvance = async (employeeId: string, amount: number) => {
@@ -872,7 +874,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPayslips(prev => [...prev, d]);
         await addNotification('COMPTABLE', `Une nouvelle fiche de paie a été générée et attend le paiement.`, 'INFO');
       }
-    } catch (e) {}
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   const updatePayslipStatus = async (id: string, status: string, accountId?: string) => {
@@ -917,7 +919,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
       }
-    } catch (e) {}
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   const addTreasuryAccount = async (acc: Omit<TreasuryAccount, 'id' | 'balance'>) => {
@@ -930,7 +932,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const newAcc = await res.json();
         setTreasuryAccounts(prev => [...prev, newAcc]);
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const addTransaction = async (tx: Omit<Transaction, 'id' | 'date'>) => {
@@ -954,7 +956,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return acc;
         }));
       }
-    } catch (err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   // --- COMMUNICATION & TASKS ---
@@ -966,14 +968,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: 'POST',
         body: JSON.stringify({ status })
       });
-    } catch(err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   const markNotificationAsRead = async (notificationId: string) => {
     setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
     try {
       await apiFetch(`/notifications/${notificationId}/read`, { method: 'POST' });
-    } catch(err) {}
+    } catch (err) { reportError(err, 'Opération'); }
   };
 
   // --- BTP METHODS (persistés via /api/crud/* — auparavant perdus au rechargement) ---
@@ -1039,9 +1041,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (chantierId && engin.statut === 'affecté' && engin.chantier_affecte_id !== chantierId) {
       throw new Error("Cet engin est déjà affecté à un autre chantier en cours.");
     }
+    // NOTE : `chantierId ?? ''` — JSON.stringify élimine `undefined`, il faut
+    // envoyer une chaîne vide pour DÉSAFFECTER l'engin côté serveur.
     const updated = await crudUpdate('btpEngins', enginId, {
       statut: chantierId ? 'affecté' : 'disponible',
-      chantier_affecte_id: chantierId
+      chantier_affecte_id: chantierId ?? ''
     }, 'Affectation engin');
     if (updated) setBtpEngins(prev => prev.map(e => e.id === enginId ? updated : e));
   };
@@ -1109,10 +1113,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error("Un lot doit être conforme pour être accepté.");
     }
 
-    // Un lot accepté et disponible passe en stock.
-    const nextStatus = status === 'accepté' ? 'en_stock' : status;
+    // Workflow en deux étapes : 'accepté' (validation QA) PUIS 'en_stock'
+    // (décision du Responsable Stockage via le bouton "Mettre en Stock").
     const updates: Partial<LotMatierePremiere> = {
-      statut: nextStatus,
+      statut: status,
       resultat_controle_qualite: resultat_controle || lot.resultat_controle_qualite,
       motif_rejet: motif_rejet || lot.motif_rejet,
       qualite_validated_by: currentRole === 'RESP_QUALITE' ? currentUser?.id : lot.qualite_validated_by
@@ -1122,7 +1126,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const agroCreateLotProduction = async (lot: Partial<LotProduction>) => {
-    // Vérification: tous les lots utilisés doivent être en stock et avoir une quantité suffisante
+    // Double validation UX (rapide) — la validation FAIBLE côté serveur est
+    // faite de façon ATOMIQUE par /api/agro/lots-production (une seule
+    // transaction : création du lot + décrément des stocks MP).
     const invalids = lot.lots_matiere_premiere_utilises?.filter(u => {
       const l = agroLotMatierePremieres.find(x => x.id_lot === u.lot_id);
       if (!l || l.statut !== 'en_stock') return true;
@@ -1135,31 +1141,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error("Impossible d'utiliser des lots qui ne sont pas en_stock ou avec quantité insuffisante.");
     }
 
-    const payload: Partial<LotProduction> = {
-      ...lot,
-      statut: 'planifié',
-      quantite_restante: lot.quantite_produite // init PF quantité
-    };
-    const created = await crudCreate<LotProduction>('agroLotProductions', payload, 'Création lot production');
-    if (!created) return;
-
-    // Décrémenter le stock des MP utilisées
-    if (lot.lots_matiere_premiere_utilises) {
-      for (const usage of lot.lots_matiere_premiere_utilises) {
-        const mp = agroLotMatierePremieres.find(x => x.id_lot === usage.lot_id);
-        if (!mp) continue;
-        const newRestante = (mp.quantite_restante ?? mp.quantite) - usage.quantite_utilisee;
-        const updated = await crudUpdate('agroLotMatierePremieres', usage.lot_id, {
-          quantite_restante: newRestante,
-          statut: newRestante <= 0 ? 'épuisé' : mp.statut
-        }, 'Décrément stock MP');
-        if (updated) {
-          setAgroLotMatierePremieres(prev => prev.map(l => l.id_lot === usage.lot_id ? updated : l));
-        }
+    try {
+      const res = await apiFetch('/agro/lots-production', {
+        method: 'POST',
+        body: JSON.stringify({
+          nom_produit: lot.nom_produit,
+          date_fabrication: lot.date_fabrication,
+          quantite_produite: lot.quantite_produite,
+          unite: lot.unite,
+          responsable_production_id: lot.responsable_production_id,
+          lots_matiere_premiere_utilises: lot.lots_matiere_premiere_utilises
+        })
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setAgroLotProductions(prev => [...prev, d.lot]);
+        // Miroir local des stocks MP mis à jour par le serveur
+        setAgroLotMatierePremieres(prev => prev.map(mp => {
+          const upd = (d.mp_updates || []).find((u: any) => u.id_lot === mp.id_lot);
+          return upd || mp;
+        }));
+      } else {
+        throw new Error(await readApiError(res, 'Création lot production impossible'));
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message && !err.message.includes('échec de la sauvegarde')) {
+        pushToast(err.message, 'ERROR');
+      } else {
+        reportError(err, 'Création lot production');
       }
     }
-
-    setAgroLotProductions(prev => [...prev, created]);
   };
 
   const agroUpdateProductionStatus = async (id_lot: string, status: AgroProductionStatus, decision_deblocage?: string) => {
@@ -1205,69 +1216,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const agroPrepareLivraison = async (commande_id: string, affectations: Omit<LigneCommandeLotLivre, 'id' | 'commande_id'>[]) => {
-    // Vérifier les stocks AVANT toute écriture serveur
-    const clonedProductions = [...agroLotProductions];
-    const missing: string[] = [];
-
+    // Validation UX rapide côté client ; l'opération est exécutée de façon
+    // ATOMIQUE par /api/agro/livraisons (lignes + stock + commande + fiche
+    // dans UNE transaction serveur — plus de risques d'état incohérent).
+    const commande = agroCommandes.find(c => c.id === commande_id);
+    if (!commande) {
+      throw new Error('Commande introuvable.');
+    }
+    if (!['enregistrée', 'confirmée'].includes(commande.statut)) {
+      throw new Error(`La commande n'est pas préparable (statut : ${commande.statut}).`);
+    }
     for (const aff of affectations) {
-      const prodIndex = clonedProductions.findIndex(p => p.id_lot === aff.lot_production_id);
-      if (prodIndex === -1) {
-        missing.push(aff.lot_production_id);
-        continue;
+      const prod = agroLotProductions.find(p => p.id_lot === aff.lot_production_id);
+      if (!prod) {
+        throw new Error(`Lot introuvable : ${aff.lot_production_id}`);
       }
-      const prod = clonedProductions[prodIndex];
       const stock = prod.quantite_restante ?? prod.quantite_produite;
       if (stock < aff.quantite_livree) {
         throw new Error(`Quantité insuffisante pour le lot ${prod.id_lot} (Stock: ${stock}).`);
       }
-      clonedProductions[prodIndex] = {
-        ...prod,
-        quantite_restante: stock - aff.quantite_livree,
-        statut: stock - aff.quantite_livree <= 0 ? 'épuisé' : prod.statut
-      } as LotProduction;
-    }
-    if (missing.length > 0) {
-      throw new Error(`Lots introuvables: ${missing.join(', ')}`);
     }
 
-    // 1. Lignes livrées
-    for (const aff of affectations) {
-      const created = await crudCreate<LigneCommandeLotLivre>('agroLignesLivrees', { ...aff, commande_id }, 'Ligne de livraison');
-      if (created) setAgroLignesLivrees(prev => [...prev, created]);
-    }
-
-    // 2. Décrément du stock des lots produits
-    const prodMap = new Map(clonedProductions.map(p => [p.id_lot, p]));
-    for (const p of clonedProductions) {
-      const original = agroLotProductions.find(x => x.id_lot === p.id_lot);
-      if (original && p.quantite_restante !== original.quantite_restante) {
-        const updated = await crudUpdate('agroLotProductions', p.id_lot, {
-          quantite_restante: p.quantite_restante,
-          statut: p.statut
-        }, 'Mise à jour lot');
-        if (updated) prodMap.set(p.id_lot, updated);
+    try {
+      const res = await apiFetch('/agro/livraisons', {
+        method: 'POST',
+        body: JSON.stringify({ commande_id, affectations })
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setAgroLignesLivrees(prev => [...prev, ...d.lignes]);
+        setAgroLotProductions(prev => prev.map(p => {
+          const upd = (d.pf_updates || []).find((u: any) => u.id_lot === p.id_lot);
+          return upd || p;
+        }));
+        setAgroCommandes(prev => prev.map(c => c.id === commande_id ? d.commande : c));
+        setAgroFiches(prev => [...prev, d.fiche]);
+      } else {
+        throw new Error(await readApiError(res, 'Préparation de livraison impossible'));
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message && !err.message.includes('échec de la sauvegarde')) {
+        pushToast(err.message, 'ERROR');
+      } else {
+        reportError(err, 'Préparation de livraison');
       }
     }
-    setAgroLotProductions(prev => prev.map(p => prodMap.get(p.id_lot) || p));
-
-    // 3. Commande passée en "préparée"
-    await agroUpdateCommandeStatus(commande_id, 'préparée');
-
-    // 4. Fiche de traçabilité descendante
-    const mp_origins = new Set<string>();
-    affectations.forEach(a => {
-      const p = agroLotProductions.find(x => x.id_lot === a.lot_production_id);
-      if (p) {
-        p.lots_matiere_premiere_utilises.forEach(mp => mp_origins.add(mp.lot_id));
-      }
-    });
-    const createdFiche = await crudCreate<FicheTracabilite>('agroFiches', {
-      commande_id,
-      lots_produits_finis: affectations.map(a => a.lot_production_id),
-      lots_matiere_premiere_origine: Array.from(mp_origins),
-      date_edition: new Date().toISOString()
-    }, 'Fiche de traçabilité');
-    if (createdFiche) setAgroFiches(prev => [...prev, createdFiche]);
   };
 
   const agroCreateReclamation = async (rec: Omit<ReclamationClient, 'id' | 'statut' | 'risque_rappel_signale'>) => {

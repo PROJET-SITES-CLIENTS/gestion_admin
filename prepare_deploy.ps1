@@ -63,7 +63,10 @@ Options -Indexes
   RewriteRule ^api(/.*)?$ backend/public/index.php [L,QSA]
   RewriteRule ^uploads(/.*)?$ backend/public/index.php [L,QSA]
 
-  # Accès direct aux sources du backend interdit (uniquement via réécriture interne)
+  # Accès direct aux sources du backend interdit.
+  # IMPORTANT : la garde REDIRECT_STATUS évite de bloquer la réécriture
+  # INTERNE vers backend/public/index.php (sinon l'API renverrait 403).
+  RewriteCond %{ENV:REDIRECT_STATUS} ^$
   RewriteRule ^backend/ - [F,L]
 
   # SPA React : tout le reste sert index.html

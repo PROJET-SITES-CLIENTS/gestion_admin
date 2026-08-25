@@ -214,8 +214,13 @@ class CrudController {
         $idKey = $schema['idKey'];
         $item[$idKey] = self::generateTableId($table, $schema);
 
-        // Champs fournis, filtrés par le schéma.
+        // Champs fournis, filtrés par le schéma. Les champs de WORKFLOW
+        // (statut, risque_rappel_signale) sont ignorés à la création :
+        // seul le serveur décide de l'état initial.
         foreach ($schema['fields'] as $field => $spec) {
+            if ($field === 'statut' || $field === 'risque_rappel_signale') {
+                continue;
+            }
             if (array_key_exists($field, $body)) {
                 $item[$field] = self::cast($body[$field], $spec);
             }

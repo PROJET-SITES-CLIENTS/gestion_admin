@@ -1203,7 +1203,7 @@ export default function AccountantSales() {
                            {e.category === 'SALAIRE' ? 'ð‘”' : e.category === 'LOYER' ? 'ð¢' : e.category === 'ELECTRICITE' ? 'â¡' : e.category === 'INTERNET' ? 'ð' : 'ð§¾'} 
                            {e.description}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-medium font-mono">{new Date(e.date).toLocaleDateString('fr-FR')} â€¢ {e.category}</span>
+                        <span className="text-[10px] text-slate-400 font-medium font-mono">{new Date(e.date).toLocaleDateString('fr-FR')} • {e.category}</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-semibold text-rose-600 text-sm">-{e.amount.toLocaleString('fr-FR')}</span>

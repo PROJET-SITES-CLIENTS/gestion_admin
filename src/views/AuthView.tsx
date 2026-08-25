@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { Lock, User, KeyRound } from 'lucide-react';
+import { Lock, User, KeyRound, Clock } from 'lucide-react';
 
 export default function AuthView() {
   const { login } = useApp();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Redirection depuis apiClient (forceLogout) quand le token a expiré.
+  const sessionExpired = typeof window !== 'undefined' && window.location.search.includes('expired=1');
 
   // Champs
   const [username, setUsername] = useState('');
@@ -39,6 +41,12 @@ export default function AuthView() {
         </div>
 
         <div className="p-4">
+          {sessionExpired && (
+            <div className="mb-4 p-3 bg-amber-50 text-amber-700 rounded-sm text-xs font-medium border border-amber-100 flex items-center gap-2">
+              <Clock size={14} className="shrink-0" />
+              Votre session a expiré. Veuillez vous reconnecter.
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Identifiant personnel</label>
@@ -67,7 +75,7 @@ export default function AuthView() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full border-slate-200 border rounded-sm p-3 pl-10 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  placeholder="••••••••"
                 />
               </div>
             </div>

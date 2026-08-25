@@ -79,14 +79,14 @@ export const downloadProjectArchive = async (project: Project, companyConfig: Co
         zip.file('4_directives_commercial.txt', txt);
       }
 
-      // â”€â”€ LOGOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ──── LOGOS ────────────────────────────────────────────────────────────────────────────────────────────────────
       if (mediasFolder) {
         if (cl.importedLogo?.url || cl.importedLogo?.base64) {
           const b = await base64ToBlob(cl.importedLogo.url || cl.importedLogo.base64!);
           if (b) mediasFolder.file(`Logo${getExtension(cl.importedLogo.type, '.png')}`, b);
         }
 
-        // â”€â”€ CHARTE GRAPHIQUE (nouveau champ brandGuidelinesFile + ancien importedBrandGuidelines) â”€â”€
+        // ──── CHARTE GRAPHIQUE (nouveau champ brandGuidelinesFile + ancien importedBrandGuidelines) ────
         if (cl.brandGuidelinesFile?.url || cl.brandGuidelinesFile?.base64) {
           const b = await base64ToBlob(cl.brandGuidelinesFile.url || cl.brandGuidelinesFile.base64!);
           if (b) mediasFolder.file(`Charte_Graphique${getExtension(cl.brandGuidelinesFile.type, '.pdf')}`, b);
@@ -96,7 +96,7 @@ export const downloadProjectArchive = async (project: Project, companyConfig: Co
           if (b) mediasFolder.file(`Charte_Graphique${getExtension(bg.type, '.pdf')}`, b);
         }
 
-        // â”€â”€ PHOTOS D'ENTREPRISE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ──── PHOTOS D'ENTREPRISE ────────────────────────────────────────────────────────────────
         if (cl.importedCompanyPhotos && cl.importedCompanyPhotos.length > 0) {
           const photosFolder = mediasFolder.folder('Photos_Entreprise');
           if (photosFolder) {
@@ -110,7 +110,7 @@ export const downloadProjectArchive = async (project: Project, companyConfig: Co
           }
         }
 
-        // â”€â”€ IMAGES SPÉCIFIQUES (nouveau champ) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ──── IMAGES SPÉCIFIQUES (nouveau champ) ──────────────────────────────
         if (cl.importedSpecificImages && cl.importedSpecificImages.length > 0) {
           const imgsFolder = mediasFolder.folder('Images_Specifiques');
           if (imgsFolder) {
@@ -125,7 +125,7 @@ export const downloadProjectArchive = async (project: Project, companyConfig: Co
         }
       }
 
-      // â”€â”€ DOCUMENTS DE CONTENU EXISTANTS (nouveau champ) â”€â”€â”€â”€â”€â”€â”€
+      // ──── DOCUMENTS DE CONTENU EXISTANTS (nouveau champ) ──────────────
       if (contenuFolder) {
         if (cl.importedContentDocs && cl.importedContentDocs.length > 0) {
           for (let i = 0; i < cl.importedContentDocs.length; i++) {
@@ -138,7 +138,7 @@ export const downloadProjectArchive = async (project: Project, companyConfig: Co
         }
       }
 
-      // â”€â”€ DOCUMENTS LÉGAUX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ──── DOCUMENTS LÉGAUX ────────────────────────────────────────────────────────────────────────────
       if (legauxFolder) {
         if (cl.rccmFile?.url || cl.rccmFile?.base64) {
           const b = await base64ToBlob(cl.rccmFile.url || cl.rccmFile.base64!);

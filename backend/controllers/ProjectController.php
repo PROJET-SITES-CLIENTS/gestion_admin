@@ -91,11 +91,13 @@ class ProjectController {
                 }
 
                 if (isset($body['paymentPlan']) && is_array($body['paymentPlan'])) {
-                    $project['paymentPlan'] = Sanitizer::deepText($body['paymentPlan'], 500);
+                    // 2000 caractères par chaîne : intitulés d'échéances.
+                    $project['paymentPlan'] = Sanitizer::deepText($body['paymentPlan'], 2000);
                 }
 
                 if (isset($body['documents']) && is_array($body['documents'])) {
-                    $project['documents'] = Sanitizer::deepText($body['documents'], 500);
+                    // 20000 : les documents SPECS contiennent du contenu long.
+                    $project['documents'] = Sanitizer::deepText($body['documents'], 20000);
                 }
 
                 $project['updatedAt'] = date('Y-m-d H:i:s');

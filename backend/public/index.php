@@ -28,6 +28,7 @@ require_once __DIR__ . '/../controllers/RhController.php';
 require_once __DIR__ . '/../controllers/AccountingController.php';
 require_once __DIR__ . '/../controllers/TaskController.php';
 require_once __DIR__ . '/../controllers/CrudController.php';
+require_once __DIR__ . '/../controllers/AgroController.php';
 
 use App\core\Router;
 use App\core\Response;
@@ -126,6 +127,12 @@ $router->post('/api/projects/:id/delete', [\App\controllers\ProjectController::c
 $router->post('/api/crud/:table', [\App\controllers\CrudController::class, 'create']);
 $router->post('/api/crud/:table/:id/update', [\App\controllers\CrudController::class, 'update']);
 $router->post('/api/crud/:table/:id/delete', [\App\controllers\CrudController::class, 'delete']);
+
+// ------------------------------------------------------------------
+// Opérations Agro atomiques (multi-tables, transaction serveur)
+// ------------------------------------------------------------------
+$router->post('/api/agro/lots-production', [\App\controllers\AgroController::class, 'createLotProduction']);
+$router->post('/api/agro/livraisons', [\App\controllers\AgroController::class, 'prepareLivraison']);
 
 // ------------------------------------------------------------------
 // Uploads
