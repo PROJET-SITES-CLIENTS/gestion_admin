@@ -1,130 +1,403 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+/* ============================================================
+   EINSOF ERP — DESIGN SYSTEM « Obsidienne & Champagne »
+   ------------------------------------------------------------
+   Architecture : les noms Tailwind habituels (slate, indigo,
+   purple) sont REMAPPÉS sur des rampes chaudes premium.
+   → tout l'existant hérite du nouveau langage visuel sans
+     aucune modification de classe.
+   ============================================================ */
+
 @theme {
+  /* ---------- Typographie ---------- */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-slate-50: #F8F7F4;
-  --color-slate-100: #EAE6DF;
-  --color-slate-200: #DCD6CB;
-  --color-slate-300: #C2BCB1;
-  --color-slate-400: #A19C91;
-  --color-slate-500: #807B72;
-  --color-slate-600: #5C5851;
-  --color-slate-700: #3D3A35;
-  --color-slate-800: #262421;
-  --color-slate-900: #1A1A1A;
+  /* ---------- Neutres chauds (remap slate) ---------- */
+  --color-slate-50: #FAF9F7;
+  --color-slate-100: #F0EEEA;
+  --color-slate-200: #E2DFD8;
+  --color-slate-300: #CCC7BD;
+  --color-slate-400: #A9A399;
+  --color-slate-500: #868077;
+  --color-slate-600: #6B655D;
+  --color-slate-700: #524D46;
+  --color-slate-800: #3B3733;
+  --color-slate-900: #262421;
+  --color-slate-950: #171514;
 
-  --color-indigo-50: #FDFBF7;
-  --color-indigo-100: #F2EDDC;
-  --color-indigo-200: #E6DFBB;
-  --color-indigo-300: #DAC892;
-  --color-indigo-400: #C7AD6C;
-  --color-indigo-500: #B49A5E;
-  --color-indigo-600: #9A824A;
-  --color-indigo-700: #826A3A;
-  --color-indigo-800: #6B532C;
-  --color-indigo-900: #544021;
+  /* ---------- Champagne / bronze (remap indigo) ---------- */
+  --color-indigo-50: #FBF9F3;
+  --color-indigo-100: #F4EDDD;
+  --color-indigo-200: #E9DCBB;
+  --color-indigo-300: #DCC791;
+  --color-indigo-400: #CCAC60;
+  --color-indigo-500: #B89042;
+  --color-indigo-600: #9C7434;
+  --color-indigo-700: #7E5C2A;
+  --color-indigo-800: #614724;
+  --color-indigo-900: #4A3720;
+  --color-indigo-950: #2B1F10;
 
-  --color-blue-50: #eff6ff;
-  --color-blue-100: #dbeafe;
-  --color-blue-200: #bfdbfe;
-  --color-blue-300: #93c5fd;
-  --color-blue-400: #60a5fa;
-  --color-blue-500: #3b82f6;
-  --color-blue-600: #2563eb;
-  --color-blue-700: #1d4ed8;
-  --color-blue-800: #1e40af;
-  --color-blue-900: #1e3a8a;
+  /* ---------- Unification : purple → même champagne ---------- */
+  --color-purple-50: #FBF9F3;
+  --color-purple-100: #F4EDDD;
+  --color-purple-200: #E9DCBB;
+  --color-purple-300: #DCC791;
+  --color-purple-400: #CCAC60;
+  --color-purple-500: #B89042;
+  --color-purple-600: #9C7434;
+  --color-purple-700: #7E5C2A;
+  --color-purple-800: #614724;
+  --color-purple-900: #4A3720;
 
-  --color-green-50: #f0fdf4;
-  --color-green-100: #dcfce7;
-  --color-green-200: #bbf7d0;
-  --color-green-300: #86efac;
-  --color-green-400: #4ade80;
-  --color-green-500: #22c55e;
-  --color-green-600: #16a34a;
-  --color-green-700: #15803d;
-  --color-green-800: #166534;
-  --color-green-900: #14532d;
-  
-  --color-emerald-50: #ecfdf5;
-  --color-emerald-100: #d1fae5;
-  --color-emerald-200: #a7f3d0;
-  --color-emerald-300: #6ee7b7;
-  --color-emerald-400: #34d399;
-  --color-emerald-500: #10b981;
-  --color-emerald-600: #059669;
-  --color-emerald-700: #047857;
-  --color-emerald-800: #065f46;
-  --color-emerald-900: #064e3b;
-  
-  --color-amber-50: #fffbeb;
-  --color-amber-100: #fef3c7;
-  --color-amber-200: #fde68a;
-  --color-amber-300: #fcd34d;
-  --color-amber-400: #fbbf24;
-  --color-amber-500: #f59e0b;
-  --color-amber-600: #d97706;
-  --color-amber-700: #b45309;
-  --color-amber-800: #92400e;
-  --color-amber-900: #78350f;
-  
-  --color-red-50: #fef2f2;
-  --color-red-100: #fee2e2;
-  --color-red-200: #fecaca;
-  --color-red-300: #fca5a5;
-  --color-red-400: #f87171;
-  --color-red-500: #ef4444;
-  --color-red-600: #dc2626;
-  --color-red-700: #b91c1c;
-  --color-red-800: #991b1b;
-  --color-red-900: #7f1d1d;
+  /* ---------- Acier calme (remap blue — usage « info ») ---------- */
+  --color-blue-50: #F4F7FA;
+  --color-blue-100: #E3EAF2;
+  --color-blue-200: #C6D5E4;
+  --color-blue-300: #9BB8D1;
+  --color-blue-400: #6C95B9;
+  --color-blue-500: #4A7AA3;
+  --color-blue-600: #3A6288;
+  --color-blue-700: #304F6E;
+  --color-blue-800: #2A4359;
+  --color-blue-900: #26394A;
+
+  /* ---------- Émeraude raffinée (succès / flux positifs) ---------- */
+  --color-emerald-50: #F0FAF4;
+  --color-emerald-100: #DCF2E4;
+  --color-emerald-200: #B9E5CB;
+  --color-emerald-300: #8AD1AB;
+  --color-emerald-400: #57B685;
+  --color-emerald-500: #349C68;
+  --color-emerald-600: #257D53;
+  --color-emerald-700: #1F6444;
+  --color-emerald-800: #1B5037;
+  --color-emerald-900: #17412D;
+
+  /* ---------- Ambre doux (attention) ---------- */
+  --color-amber-50: #FDF9EF;
+  --color-amber-100: #F9F0D8;
+  --color-amber-200: #F2E0AE;
+  --color-amber-300: #E9CB7C;
+  --color-amber-400: #DFB353;
+  --color-amber-500: #D19E3B;
+  --color-amber-600: #B4812E;
+  --color-amber-700: #916627;
+  --color-amber-800: #745122;
+  --color-amber-900: #5D421D;
+
+  /* ---------- Rose soutenu (erreur / flux négatifs) ---------- */
+  --color-rose-50: #FDF4F4;
+  --color-rose-100: #FBE7E7;
+  --color-rose-200: #F6CFCF;
+  --color-rose-300: #EFADAD;
+  --color-rose-400: #E47E7E;
+  --color-rose-500: #D45A5A;
+  --color-rose-600: #BE4141;
+  --color-rose-700: #9E3434;
+  --color-rose-800: #832E2E;
+  --color-rose-900: #6C2929;
+
+  /* ---------- Ombres ---------- */
+  --shadow-soft: 0 1px 2px rgba(38, 36, 33, 0.04), 0 2px 8px rgba(38, 36, 33, 0.04);
+  --shadow-lift: 0 1px 2px rgba(38, 36, 33, 0.05), 0 8px 24px -6px rgba(38, 36, 33, 0.12);
+  --shadow-pop: 0 4px 12px rgba(38, 36, 33, 0.10), 0 20px 48px -12px rgba(38, 36, 33, 0.22);
+  --shadow-gold: 0 1px 2px rgba(156, 116, 52, 0.25), 0 6px 20px -6px rgba(156, 116, 52, 0.45);
+
+  /* ---------- Rayons : rounded-sm devient 10px partout
+     (l'ancienne valeur 2px est remplacée globalement —
+      c'est le levier du « soft premium ») ---------- */
+  --radius-sm: 0.625rem;
+  --radius: 0.625rem;
+
+  /* ---------- Animations CSS ---------- */
+  --animate-shimmer: shimmer 1.8s linear infinite;
+  --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-scale-in: scale-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
 }
 
+/* ============================================================
+   BASE
+   ============================================================ */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    /* Chaleur subtile en haut de page, puis neutre */
+    background:
+      radial-gradient(1200px 400px at 50% -180px, rgba(220, 199, 145, 0.16), transparent 70%),
+      var(--color-slate-50);
+    color: var(--color-slate-900);
+    /* Chiffres alignés partout (essentiel pour un ERP) + Inter alternates */
+    font-feature-settings: "tnum" 1, "cv11" 1, "ss01" 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: var(--color-indigo-200);
+    color: var(--color-indigo-900);
+  }
+
+  /* Focus visible : anneau champagne uniforme */
+  :focus-visible {
+    outline: 2px solid var(--color-indigo-400);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+    outline-offset: 0;
+  }
+
+  /* Scrollbars fines et discrètes (toute l'app) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-slate-300) transparent;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-slate-300);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--color-slate-400); }
+
+  /* Titres : Inter serré, tracking négatif subtil */
+  h1, h2, h3 { letter-spacing: -0.015em; }
+
+  /* Champs de formulaire : base cohérente */
+  input[type="text"], input[type="password"], input[type="number"],
+  input[type="date"], input[type="time"], input[type="email"],
+  textarea, select {
+    font-family: inherit;
+  }
+  input[type="date"], input[type="time"] {
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+/* ============================================================
+   COMPOSANTS
+   ============================================================ */
+@layer components {
+  /* ---- Carte premium ---- */
+  .card {
+    background: #fff;
+    border: 1px solid rgba(226, 223, 216, 0.9);
+    border-radius: 0.875rem;
+    box-shadow: var(--shadow-soft);
+    transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-lift);
+    border-color: var(--color-indigo-200);
+    transform: translateY(-1px);
+  }
+
+  /* ---- Boutons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    line-height: 1;
+    padding: 0.65rem 1.05rem;
+    border-radius: 0.625rem;
+    transition: all 0.18s ease;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.975); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .btn-primary {
+    background: linear-gradient(180deg, var(--color-indigo-500), var(--color-indigo-600) 55%, var(--color-indigo-700));
+    color: #fff;
+    box-shadow: var(--shadow-gold);
+    border: 1px solid var(--color-indigo-700);
+  }
+  .btn-primary:hover {
+    background: linear-gradient(180deg, var(--color-indigo-400), var(--color-indigo-600) 55%, var(--color-indigo-700));
+    transform: translateY(-1px);
+  }
+
+  .btn-dark {
+    background: var(--color-slate-900);
+    color: #fff;
+    border: 1px solid var(--color-slate-800);
+  }
+  .btn-dark:hover { background: var(--color-slate-800); transform: translateY(-1px); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-slate-600);
+    border: 1px solid var(--color-slate-200);
+  }
+  .btn-ghost:hover {
+    background: var(--color-slate-50);
+    color: var(--color-slate-900);
+    border-color: var(--color-slate-300);
+  }
+
+  /* ---- Champs ---- */
+  .input {
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--color-slate-200);
+    border-radius: 0.625rem;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.875rem;
+    color: var(--color-slate-900);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .input::placeholder { color: var(--color-slate-400); }
+  .input:hover { border-color: var(--color-slate-300); }
+  .input:focus {
+    outline: none;
+    border-color: var(--color-indigo-400);
+    box-shadow: 0 0 0 3px rgba(220, 199, 145, 0.28);
+  }
+
+  .label {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-slate-500);
+    margin-bottom: 0.375rem;
+  }
+
+  /* ---- Badges ---- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  /* ---- Divers ---- */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--color-slate-500);
+    background: var(--color-slate-100);
+    border: 1px solid var(--color-slate-200);
+    border-bottom-width: 2px;
+    border-radius: 0.375rem;
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  }
+
+  .gold-text {
+    background: linear-gradient(120deg, var(--color-indigo-400), var(--color-indigo-600) 45%, var(--color-indigo-800));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ---- Squelettes de chargement ---- */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-slate-100) 25%,
+      var(--color-slate-200) 45%,
+      var(--color-slate-100) 65%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+    border-radius: 0.5rem;
+  }
+
+  /* ---- Tables premium ---- */
+  .table-premium th {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--color-slate-400);
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-slate-200);
+    white-space: nowrap;
+  }
+  .table-premium td {
+    padding: 0.85rem 1rem;
+    font-size: 0.875rem;
+    border-bottom: 1px solid var(--color-slate-100);
+    vertical-align: middle;
+  }
+  .table-premium tbody tr { transition: background 0.12s ease; }
+  .table-premium tbody tr:hover { background: var(--color-slate-50); }
+  .table-premium tbody tr:last-child td { border-bottom: none; }
+
+  /* ---- Hairline dorée décorative ---- */
+  .hairline-gold {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-indigo-300), transparent);
+  }
+}
+
+/* ============================================================
+   IMPRESSION
+   ============================================================ */
 @media print {
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-}
-
-body {
-  font-family: var(--font-sans);
-  background-color: var(--color-slate-50);
-  color: var(--color-slate-900);
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #cbd5e1;
-  border-radius: 20px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: #94a3b8;
-}
-
-@media print {
   body {
-    background-color: white !important;
+    background: white !important;
   }
-  aside {
-    display: none !important;
-  }
+  aside { display: none !important; }
   main {
     max-height: none !important;
     overflow: visible !important;
-  }
-  .print\:hidden {
-    display: none !important;
   }
 }

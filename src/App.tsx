@@ -1,4 +1,5 @@
 // src/App.tsx
+import React from 'react';
 import { AppProvider, useApp } from './store';
 import { Layout } from './components/Layout';
 import ManagerView from './views/ManagerView';
@@ -8,26 +9,31 @@ import RhView from './views/RhView';
 import AssistantView from './views/AssistantView';
 import AuthView from './views/AuthView';
 import { ErrorBoundary } from 'react-error-boundary';
+import { motion } from 'motion/react';
+import { RotateCcw } from 'lucide-react';
 
 function GlobalErrorFallback({ error, resetErrorBoundary }: any) {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white p-4 rounded-sm shadow-none max-w-xl w-full border border-slate-200 text-center">
-        <div className="w-16 h-16 bg-rose-100 text-rose-650 flex items-center justify-center rounded-sm mx-auto mb-4">
-          <span className="text-xl font-semibold">⚠️</span>
+      <div className="card max-w-xl w-full p-8 text-center">
+        <div className="w-14 h-14 mx-auto mb-5 rounded-xl bg-rose-50 border border-rose-200/70 text-rose-500 flex items-center justify-center">
+          <span className="text-2xl font-serif italic">!</span>
         </div>
-        <h2 className="text-xl font-semibold text-slate-900 mb-2">Une erreur inattendue est survenue</h2>
-        <p className="text-xs text-slate-500 mb-4">L'ERP a détecté un crash de rendu. Voici les détails techniques :</p>
-        <pre className="text-left bg-slate-100 p-4 rounded-sm text-xs font-mono text-slate-700 overflow-x-auto max-h-60 mb-6 border border-slate-200">
+        <h2 className="text-lg font-bold text-slate-900">Une erreur inattendue est survenue</h2>
+        <p className="text-[13px] text-slate-500 mt-1.5 mb-5">
+          L'ERP a détecté un crash de rendu. Voici les détails techniques :
+        </p>
+        <pre className="text-left bg-slate-950 text-stone-300 p-4 rounded-lg text-[11px] font-mono overflow-x-auto max-h-56 mb-6 leading-relaxed">
           {error.stack || error.message}
         </pre>
-        <button 
+        <button
           onClick={() => {
             resetErrorBoundary();
             window.location.reload();
-          }} 
-          className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-sm text-sm font-semibold transition cursor-pointer"
+          }}
+          className="btn btn-dark mx-auto group"
         >
+          <RotateCcw size={14} className="transition-transform group-hover:-rotate-180 duration-500" />
           Recharger l'application
         </button>
       </div>
@@ -45,6 +51,33 @@ import { AgroApproView } from './views/agro/AgroApproView';
 import { AgroProductionView } from './views/agro/AgroProductionView';
 import { AgroTracabiliteView } from './views/agro/AgroTracabiliteView';
 
+const MAIN_VIEWS: Record<string, React.ComponentType> = {
+  GERANT: ManagerView,
+  COMMERCIAL: CommercialView,
+  COMPTABLE: AccountantView,
+  RH: RhView,
+  ASSISTANTE: AssistantView,
+};
+
+const BTP_ROLES = ['ETUDES', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'QHSE_BTP', 'RESP_MATERIEL', 'MAGASINIER_BTP'];
+const AGRO_ROLES = ['RESP_PRODUCTION', 'RESP_QUALITE', 'RESP_AGRO', 'RESP_STOCKAGE', 'RESP_TRACABILITE'];
+
+function ModulePlaceholder({ title, hint, agro = false }: { title: string; hint: string; agro?: boolean }) {
+  return (
+    <div className="card flex flex-col items-center justify-center py-20 text-center">
+      <div className={`h-12 w-12 mb-4 rounded-xl flex items-center justify-center border ${agro ? 'bg-amber-50 border-amber-200/70 text-amber-600' : 'bg-indigo-50 border-indigo-200/70 text-indigo-600'}`}>
+        <span className="font-serif italic text-xl">{agro ? 'A' : 'B'}</span>
+      </div>
+      <h2 className="text-base font-bold text-slate-800">{title}</h2>
+      <p className="text-[13px] text-slate-500 mt-1.5 max-w-sm">{hint}</p>
+      <div className="hairline-gold w-24 mt-5" />
+      <p className="mt-4 text-[11px] text-slate-400 flex items-center gap-1.5">
+        Astuce : appuyez sur <kbd className="kbd">⌘K</kbd> pour naviguer rapidement
+      </p>
+    </div>
+  );
+}
+
 function AppContent() {
   const { currentRole, currentUser, activeMenu } = useApp();
 
@@ -52,53 +85,58 @@ function AppContent() {
     return <AuthView />;
   }
 
+  const MainView = MAIN_VIEWS[currentRole || ''];
+  const transitionKey = `${currentRole}-${activeMenu}`;
+
+  const renderContent = () => {
+    switch (activeMenu) {
+      case 'MESSAGERIE': return <InternalMessenger />;
+      case 'TASKS': return <TaskBoard />;
+      case 'BTP_OFFRES': return <BtpOffresView />;
+      case 'BTP_CHANTIERS': return <BtpChantiersView />;
+      case 'BTP_ENGINS': return <BtpEnginsView />;
+      case 'BTP_QHSE': return <BtpQhseView />;
+      case 'AGRO_APPRO': return <AgroApproView />;
+      case 'AGRO_PROD': return <AgroProductionView />;
+      case 'AGRO_TRACABILITE': return <AgroTracabiliteView />;
+      default:
+        if (MainView) return <MainView />;
+        if (BTP_ROLES.includes(currentRole || '')) {
+          return (
+            <ModulePlaceholder
+              title="Espace BTP"
+              hint='Veuillez sélectionner un module dans le menu « Opérations BTP » à gauche.'
+            />
+          );
+        }
+        if (AGRO_ROLES.includes(currentRole || '')) {
+          return (
+            <ModulePlaceholder
+              agro
+              title="Espace Filière Agro"
+              hint='Veuillez sélectionner un module dans le menu « Filière Agro » à gauche.'
+            />
+          );
+        }
+        return (
+          <ModulePlaceholder
+            title={`Espace ${currentRole}`}
+            hint="Ce rôle n'a pas encore d'espace dédié. Utilisez la messagerie et les tâches via le menu de gauche."
+          />
+        );
+    }
+  };
+
   return (
     <Layout>
-      {activeMenu === 'MESSAGERIE' ? (
-        <InternalMessenger />
-      ) : activeMenu === 'TASKS' ? (
-        <TaskBoard />
-      ) : activeMenu === 'BTP_OFFRES' ? (
-        <BtpOffresView />
-      ) : activeMenu === 'BTP_CHANTIERS' ? (
-        <BtpChantiersView />
-      ) : activeMenu === 'BTP_ENGINS' ? (
-        <BtpEnginsView />
-      ) : activeMenu === 'BTP_QHSE' ? (
-        <BtpQhseView />
-      ) : activeMenu === 'AGRO_APPRO' ? (
-        <AgroApproView />
-      ) : activeMenu === 'AGRO_PROD' ? (
-        <AgroProductionView />
-      ) : activeMenu === 'AGRO_TRACABILITE' ? (
-        <AgroTracabiliteView />
-      ) : (
-        <>
-          {currentRole === 'GERANT' && <ManagerView />}
-          {currentRole === 'COMMERCIAL' && <CommercialView />}
-          {currentRole === 'COMPTABLE' && <AccountantView />}
-          {currentRole === 'RH' && <RhView />}
-          {currentRole === 'ASSISTANTE' && <AssistantView />}
-          {['ETUDES', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'QHSE_BTP', 'RESP_MATERIEL', 'MAGASINIER_BTP'].includes(currentRole || '') && (
-            <div className="flex flex-col items-center justify-center h-64 bg-white border border-slate-200 rounded-lg shadow-sm text-slate-500">
-               <h2 className="text-xl font-bold mb-2">Espace BTP</h2>
-               <p>Veuillez sélectionner un module dans le menu "Opérations BTP" à gauche.</p>
-            </div>
-          )}
-          {['RESP_PRODUCTION', 'RESP_QUALITE', 'RESP_AGRO', 'RESP_STOCKAGE', 'RESP_TRACABILITE'].includes(currentRole || '') && (
-            <div className="flex flex-col items-center justify-center h-64 bg-white border border-slate-200 rounded-lg shadow-sm text-slate-500 mt-4">
-               <h2 className="text-xl font-bold mb-2 text-orange-600">Espace Filière Agro</h2>
-               <p>Veuillez sélectionner un module dans le menu "Filière Agro" à gauche.</p>
-            </div>
-          )}
-          {!['GERANT', 'COMMERCIAL', 'COMPTABLE', 'RH', 'ASSISTANTE', 'ETUDES', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'QHSE_BTP', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'RESP_PRODUCTION', 'RESP_QUALITE', 'RESP_AGRO', 'RESP_STOCKAGE', 'RESP_TRACABILITE'].includes(currentRole || '') && (
-            <div className="flex flex-col items-center justify-center h-64 bg-white border border-slate-200 rounded-lg shadow-sm text-slate-500 mt-4">
-               <h2 className="text-xl font-bold mb-2">Espace {currentRole}</h2>
-               <p>Ce rôle n'a pas encore d'espace de travail dédié. Utilisez la messagerie et les tâches via le menu de gauche.</p>
-            </div>
-          )}
-        </>
-      )}
+      <motion.div
+        key={transitionKey}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {renderContent()}
+      </motion.div>
     </Layout>
   );
 }

@@ -83,11 +83,14 @@ export default function ManagerView() {
   }, []);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="border-b border-slate-200 pb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-7">
+      <div className="flex flex-wrap items-end justify-between gap-4 pb-1">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Vue Globale Direction</h1>
-          <p className="text-slate-500 mt-1">Supervisez l'activité globale.</p>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+            <span className="font-serif italic font-normal text-indigo-600 mr-1.5">La vue</span>
+            globale direction
+          </h1>
+          <p className="text-[13px] text-slate-500 mt-1">Supervision de l'activité : finances, pipeline, équipe et alertes.</p>
         </div>
       </div>
 
@@ -95,45 +98,37 @@ export default function ManagerView() {
         <div className="space-y-6">
           {/* Top KPI row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-sm shadow-none border border-slate-200 flex items-center gap-4">
-              <div className="w-10 h-10 border border-slate-100 text-slate-500 rounded-sm flex items-center justify-center bg-slate-50">
-                <Coins size={18} />
-              </div>
-              <div>
-                <div className="text-xl font-semibold text-slate-800">
-                  {treasuryAccounts.reduce((acc, t) => acc + t.balance, 0).toLocaleString('fr-FR')} GNF
-                </div>
-                <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Trésorerie Globale</div>
-              </div>
+            <div className="card card-hover p-5 relative overflow-hidden">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gradient-to-br from-indigo-400/70 to-transparent opacity-[0.07] blur-xl" />
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Trésorerie Globale</p>
+              <p className="mt-2 text-[22px] leading-tight font-bold font-mono tracking-tight text-slate-900">
+                {treasuryAccounts.reduce((acc, t) => acc + t.balance, 0).toLocaleString('fr-FR')}
+                <span className="ml-1.5 text-[11px] font-sans font-medium text-slate-400">GNF</span>
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-400">{treasuryAccounts.length} compte{treasuryAccounts.length > 1 ? 's' : ''} actif{treasuryAccounts.length > 1 ? 's' : ''}</p>
             </div>
-            <div className="bg-white p-4 rounded-sm shadow-none border border-slate-200 flex items-center gap-4">
-              <div className="w-10 h-10 border border-slate-100 text-slate-500 rounded-sm flex items-center justify-center bg-slate-50">
-                <CheckCircle2 size={18} />
-              </div>
-              <div>
-                <div className="text-xl font-semibold text-slate-800">{securedRevenue.toLocaleString('fr-FR')} GNF</div>
-                <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">CA Encaissé</div>
-              </div>
+            <div className="card card-hover p-5 relative overflow-hidden">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gradient-to-br from-emerald-400/70 to-transparent opacity-[0.07] blur-xl" />
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">CA Encaissé</p>
+              <p className="mt-2 text-[22px] leading-tight font-bold font-mono tracking-tight text-slate-900">
+                {securedRevenue.toLocaleString('fr-FR')}
+                <span className="ml-1.5 text-[11px] font-sans font-medium text-slate-400">GNF</span>
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-400">sur {expectedRevenue.toLocaleString('fr-FR')} GNF attendus</p>
             </div>
-            <div className="bg-white p-4 rounded-sm shadow-none border border-slate-200 flex items-center gap-4">
-              <div className="w-10 h-10 border border-slate-100 text-rose-500 rounded-sm flex items-center justify-center bg-rose-50">
-                <Target size={18} />
-              </div>
-              <div>
-                <div className="text-xl font-semibold text-rose-600">
-                  {expenses.filter(e => e.status === 'PENDING').length}
-                </div>
-                <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Dépenses en attente</div>
-              </div>
+            <div className="card card-hover p-5 relative overflow-hidden">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gradient-to-br from-rose-400/70 to-transparent opacity-[0.07] blur-xl" />
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Dépenses en attente</p>
+              <p className={`mt-2 text-[22px] leading-tight font-bold font-mono tracking-tight ${expenses.filter(e => e.status === 'PENDING').length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                {expenses.filter(e => e.status === 'PENDING').length}
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-400">validation comptable requise</p>
             </div>
-            <div className="bg-white p-4 rounded-sm shadow-none border border-slate-200 flex items-center gap-4">
-              <div className="w-10 h-10 border border-slate-100 text-indigo-500 rounded-sm flex items-center justify-center bg-indigo-50">
-                <Users size={18} />
-              </div>
-              <div>
-                <div className="text-xl font-semibold text-slate-800">{employees.length}</div>
-                <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Collaborateurs</div>
-              </div>
+            <div className="card card-hover p-5 relative overflow-hidden">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gradient-to-br from-blue-400/70 to-transparent opacity-[0.07] blur-xl" />
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Collaborateurs</p>
+              <p className="mt-2 text-[22px] leading-tight font-bold font-mono tracking-tight text-slate-900">{employees.length}</p>
+              <p className="mt-1.5 text-[11px] text-slate-400">{systemUsers.length} compte{systemUsers.length > 1 ? 's' : ''} utilisateur</p>
             </div>
           </div>
 

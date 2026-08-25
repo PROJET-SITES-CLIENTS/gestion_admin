@@ -21,6 +21,7 @@
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
+    "motion": "^13.1.1",
     "pdfmake": "^0.3.9",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
