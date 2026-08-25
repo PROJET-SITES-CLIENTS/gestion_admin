@@ -1,0 +1,42 @@
+{
+  "name": "einsof-erp-gestion-admin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ERP Einsof Digit — gestion commerciale, comptable, RH, BTP et agro (Guinée). Frontend React 19 + Vite, backend PHP natif.",
+  "scripts": {
+    "dev": "node dev.js",
+    "build": "vite build",
+    "start": "php -S localhost:8000 -t backend/public backend/public/index.php",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "backup": "node scripts/backup-db.cjs"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/file-saver": "^2.0.7",
+    "@types/pdfmake": "^0.3.3",
+    "@vitejs/plugin-react": "^5.0.4",
+    "file-saver": "^2.0.5",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.546.0",
+    "pdfmake": "^0.3.9",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-error-boundary": "^6.1.2",
+    "recharts": "^3.8.1",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@babel/parser": "^7.29.7",
+    "@types/node": "^22.14.0",
+    "async-mutex": "^0.5.0",
+    "autoprefixer": "^10.4.21",
+    "bcryptjs": "^3.0.3",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}

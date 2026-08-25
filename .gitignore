@@ -1,0 +1,23 @@
+# Dépendances et artefacts
+node_modules/
+dist/
+coverage/
+.DS_Store
+*.log
+*.zip
+
+# Secrets — JAMAIS versionnés
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+
+# Données métier réelles (base JSON, uploads clients, sauvegardes)
+db.json
+uploads/
+backups/
+backend/data/
+
+# Historique archivé (scripts de réparation et anciens déploiements)
+_archive/

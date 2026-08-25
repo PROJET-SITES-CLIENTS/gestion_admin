@@ -1,0 +1,16 @@
+{
+    "name": "einsof/gestion-admin-backend",
+    "description": "Backend API en PHP natif pour l'ERP Einsof Digit",
+    "type": "project",
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "./"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}
