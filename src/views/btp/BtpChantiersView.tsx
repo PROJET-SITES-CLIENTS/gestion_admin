@@ -46,7 +46,7 @@ export const BtpChantiersView = () => {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Pilotage des Chantiers BTP</h1>
+      <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 mb-6"><span className="font-serif italic font-normal text-indigo-600 mr-1.5">Le pilotage</span>des chantiers</h1>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">

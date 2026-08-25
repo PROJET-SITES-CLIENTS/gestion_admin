@@ -40,13 +40,13 @@ export default function TaskBoard() {
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 animate-in fade-in duration-500">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 pb-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 pb-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 flex items-center gap-3">
-            <Inbox className="text-purple-600" size={32} />
-            Tâches & Requêtes
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+            <span className="font-serif italic font-normal text-indigo-600 mr-1.5">Le flux</span>
+            des requêtes
           </h1>
-          <p className="text-slate-500 mt-2 text-lg">Gérez vos demandes entrantes et sortantes inter-services.</p>
+          <p className="text-[13px] text-slate-500 mt-1">Demandes entrantes et sortantes inter-services.</p>
         </div>
         <button 
           onClick={() => setShowNewTask(true)}

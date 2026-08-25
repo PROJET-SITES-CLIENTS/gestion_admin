@@ -100,8 +100,14 @@ export default function RhView() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Espace Ressources Humaines</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+            <span className="font-serif italic font-normal text-indigo-600 mr-1.5">Le capital</span>
+            humain
+          </h1>
+          <p className="text-[13px] text-slate-500 mt-1">Employés, contrats, congés et paie — paramétrage Guinée.</p>
+        </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-sm shadow-inner border border-slate-200">
           {[
             { id: 'DASHBOARD', label: 'Tableau de Bord', icon: Building },

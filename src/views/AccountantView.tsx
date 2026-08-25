@@ -10,14 +10,16 @@ export default function AccountantView() {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TREASURY' | 'SALES' | 'EXPENSES' | 'TAXES'>('DASHBOARD');
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/50">
-      <div className="bg-white px-8 py-4 border-b border-slate-200 sticky top-0 z-20 print:hidden">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <Activity className="text-indigo-600" />
-          Espace Comptabilité & Finances
+    <div className="flex flex-col h-full bg-slate-50/50 -mx-4 md:-mx-7 -mt-4 md:-mt-7 px-4 md:px-7">
+      <div className="bg-white/90 glass px-4 md:px-7 py-4 border-b border-slate-200/80 sticky top-0 z-20 print:hidden">
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
+          <span className="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200/70 flex items-center justify-center">
+            <Activity className="text-indigo-600" size={17} />
+          </span>
+          <span><span className="font-serif italic font-normal text-indigo-600">Les</span> finances</span>
         </h1>
-        <p className="text-sm text-slate-500 mt-1">Gérez la trésorerie, la facturation, les dépenses et la rentabilité.</p>
-        
+        <p className="text-[13px] text-slate-500 mt-1.5">Trésorerie, facturation, dépenses et rentabilité.</p>
+
         <div className="flex space-x-1 bg-slate-100 p-1 rounded-sm w-fit mt-6">
           <button
             onClick={() => setActiveTab('DASHBOARD')}

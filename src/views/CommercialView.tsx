@@ -81,10 +81,13 @@ export default function CommercialView() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 relative">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-slate-200/80 pb-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Espace Commercial</h1>
-          <p className="text-slate-500 mt-1">Gérez vos prospects, vos projets, et suivez les paiements.</p>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+            <span className="font-serif italic font-normal text-indigo-600 mr-1.5">L'espace</span>
+            commercial
+          </h1>
+          <p className="text-[13px] text-slate-500 mt-1">Prospects, projets et suivi des paiements.</p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-sm">
           <button 

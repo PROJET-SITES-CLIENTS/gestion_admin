@@ -69,10 +69,7 @@ export function AgroTracabiliteView() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <Network className="w-6 h-6 text-orange-600" />
-          Traçabilité & Ventes (Agro)
-        </h2>
+        <h2 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900"><span className="font-serif italic font-normal text-amber-600 mr-1.5">La traçabilité</span>& ventes</h2>
         {['COMMERCIAL', 'GERANT'].includes(currentRole || '') && (
           <button onClick={() => setShowNewCmd(true)} className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700">
             + Nouvelle Commande
@@ -151,7 +148,7 @@ export function AgroTracabiliteView() {
               </div>
             ) : (
               <div>
-                <h4 className="text-xl font-bold text-green-400 mb-2">MATIÈRE PREMIÈRE : {tracabilityResult.lot.id_lot}</h4>
+                <h4 className="text-xl font-bold text-emerald-400 mb-2">MATIÈRE PREMIÈRE : {tracabilityResult.lot.id_lot}</h4>
                 <div className="bg-slate-800 p-4 rounded border border-slate-600 mt-4">
                   <h5 className="font-semibold text-slate-300 border-b border-slate-600 pb-2 mb-2">⬇️ AVAL (Lots Produits)</h5>
                   <ul className="space-y-2 text-sm text-slate-300">
@@ -256,7 +253,7 @@ export function AgroTracabiliteView() {
                               const fiche = agroFiches.find(f => f.commande_id === cmd.id);
                               if(fiche) alert(`Fiche: ${fiche.id}\nLots finis: ${fiche.lots_produits_finis.join(', ')}\nMP d'origine: ${fiche.lots_matiere_premiere_origine.join(', ')}`);
                               else alert("Fiche non trouvée.");
-                            }} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200 flex items-center gap-1">
+                            }} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs hover:bg-emerald-200 flex items-center gap-1">
                               <FileText className="w-3 h-3"/> Voir Fiche
                             </button>
                             <button onClick={() => setReclamationModal({commandeId: cmd.id, clientId: cmd.client_id})} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 flex items-center gap-1">

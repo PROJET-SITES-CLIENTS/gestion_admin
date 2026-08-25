@@ -21,7 +21,7 @@ export const BtpEnginsView = () => {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Parc Matériel & Engins</h1>
+      <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 mb-6"><span className="font-serif italic font-normal text-indigo-600 mr-1.5">Le parc</span>matériel & engins</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">

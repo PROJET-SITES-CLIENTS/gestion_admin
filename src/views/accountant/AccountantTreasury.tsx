@@ -22,7 +22,7 @@ export function AccountantTreasury() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Trésorerie & Comptes</h2>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900"><span className="font-serif italic font-normal text-indigo-600 mr-1.5">La trésorerie</span>& comptes</h2>
           <p className="text-sm text-slate-500">Gérez vos comptes bancaires, caisses et mobile money.</p>
         </div>
         <button onClick={() => setShowAddAccount(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-sm text-sm font-medium flex items-center gap-2">

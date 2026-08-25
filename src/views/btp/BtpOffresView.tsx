@@ -49,7 +49,7 @@ export const BtpOffresView = () => {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Appels d'Offres BTP</h1>
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900"><span className="font-serif italic font-normal text-indigo-600 mr-1.5">Les appels</span>d'offres BTP</h1>
         {(currentRole === 'COMMERCIAL' || currentRole === 'GERANT' || currentRole === 'ETUDES') && (
           <button onClick={() => setShowCreate(true)} className="bg-blue-600 text-white px-4 py-2 rounded shadow-sm hover:bg-blue-700">
             Nouvelle Offre

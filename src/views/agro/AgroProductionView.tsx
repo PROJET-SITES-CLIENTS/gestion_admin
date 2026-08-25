@@ -44,10 +44,7 @@ export function AgroProductionView() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <Factory className="w-6 h-6 text-indigo-600" />
-          Production & Transformation
-        </h2>
+        <h2 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900"><span className="font-serif italic font-normal text-amber-600 mr-1.5">La production</span>& transformation</h2>
         {['RESP_PRODUCTION', 'GERANT'].includes(currentRole || '') && (
           <button onClick={() => setShowNew(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
             + Lancer Production
@@ -113,7 +110,7 @@ export function AgroProductionView() {
                     {['RESP_QUALITE', 'GERANT'].includes(currentRole || '') && (
                       <div className="flex gap-1 border p-1 rounded bg-slate-50">
                         <span className="text-xs text-slate-500 my-auto ml-1 mr-2">CCP:</span>
-                        <button onClick={() => handleControle(lot.id_lot, true)} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200">Valider</button>
+                        <button onClick={() => handleControle(lot.id_lot, true)} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs hover:bg-emerald-200">Valider</button>
                         <button onClick={() => handleControle(lot.id_lot, false)} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200">Défaut</button>
                       </div>
                     )}
@@ -131,7 +128,7 @@ export function AgroProductionView() {
                   </button>
                 )}
                 {lot.statut === 'conditionné' && ['RESP_QUALITE'].includes(currentRole || '') && (
-                  <button onClick={() => guard(async () => { await agroUpdateProductionStatus(lot.id_lot, 'disponible_à_la_vente'); })} className="px-3 py-1 bg-green-600 text-white flex items-center gap-1 rounded text-sm hover:bg-green-700">
+                  <button onClick={() => guard(async () => { await agroUpdateProductionStatus(lot.id_lot, 'disponible_à_la_vente'); })} className="px-3 py-1 bg-emerald-600 text-white flex items-center gap-1 rounded text-sm hover:bg-emerald-700">
                     <ShieldAlert className="w-4 h-4" /> Libérer pour la Vente
                   </button>
                 )}

@@ -36,12 +36,9 @@ export function AgroApproView() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <Truck className="w-6 h-6 text-green-600" />
-          Approvisionnement & Stock (Matières Premières)
-        </h2>
+        <h2 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900"><span className="font-serif italic font-normal text-amber-600 mr-1.5">L'approvisionnement</span>& stock MP</h2>
         {['RESP_AGRO', 'RESP_STOCKAGE', 'GERANT'].includes(currentRole || '') && (
-          <button onClick={() => setShowNew(true)} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+          <button onClick={() => setShowNew(true)} className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">
             + Planifier Réception
           </button>
         )}
@@ -61,7 +58,7 @@ export function AgroApproView() {
             <input type="number" placeholder="Coût d'acquisition total" className="p-2 border rounded" onChange={e => setNewLot({...newLot, cout_acquisition: Number(e.target.value)})} />
           </div>
           <div className="flex gap-2">
-            <button onClick={handleCreate} className="px-4 py-2 bg-green-600 text-white rounded">Enregistrer</button>
+            <button onClick={handleCreate} className="px-4 py-2 bg-emerald-600 text-white rounded">Enregistrer</button>
             <button onClick={() => setShowNew(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded">Annuler</button>
           </div>
         </div>
@@ -85,7 +82,7 @@ export function AgroApproView() {
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => {setQaModal(null); setQaText('');}} className="px-4 py-2 bg-slate-200 text-slate-800 rounded">Annuler</button>
-              <button onClick={handleQaSubmit} className={`px-4 py-2 text-white rounded ${qaModal.type === 'accept' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+              <button onClick={handleQaSubmit} className={`px-4 py-2 text-white rounded ${qaModal.type === 'accept' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
                 Confirmer
               </button>
             </div>
@@ -112,7 +109,7 @@ export function AgroApproView() {
                 <td className="p-4">{lot.quantite_restante ?? lot.quantite} {lot.unite}</td>
                 <td className="p-4">
                   <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    lot.statut === 'en_stock' ? 'bg-green-100 text-green-700' :
+                    lot.statut === 'en_stock' ? 'bg-emerald-100 text-emerald-700' :
                     lot.statut === 'rejeté' ? 'bg-red-100 text-red-700' :
                     lot.statut === 'épuisé' ? 'bg-slate-300 text-slate-800' :
                     'bg-amber-100 text-amber-700'
@@ -134,12 +131,12 @@ export function AgroApproView() {
                   )}
                     {lot.statut === 'contrôlé' && ['RESP_QUALITE', 'GERANT'].includes(currentRole || '') && (
                       <div className="flex flex-col gap-1">
-                        <button onClick={() => setQaModal({lotId: lot.id_lot, type: 'accept'})} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200" title="Saisir Résultat et Accepter">Valider (Conforme)</button>
+                        <button onClick={() => setQaModal({lotId: lot.id_lot, type: 'accept'})} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs hover:bg-emerald-200" title="Saisir Résultat et Accepter">Valider (Conforme)</button>
                         <button onClick={() => setQaModal({lotId: lot.id_lot, type: 'reject'})} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200" title="Saisir Résultat et Rejeter">Rejeter (Non Conforme)</button>
                       </div>
                     )}
                   {lot.statut === 'accepté' && ['RESP_STOCKAGE', 'GERANT'].includes(currentRole || '') && (
-                    <button onClick={() => agroUpdateMatierePremiereStatus(lot.id_lot, 'en_stock')} className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">Mettre en Stock</button>
+                    <button onClick={() => agroUpdateMatierePremiereStatus(lot.id_lot, 'en_stock')} className="px-2 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700">Mettre en Stock</button>
                   )}
                 </td>
               </tr>
