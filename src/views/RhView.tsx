@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { Users, FileText, Calendar, Plus, Calculator, Settings, Building, FileSignature, CheckCircle, Clock } from 'lucide-react';
+import { Users, FileText, Calendar, Plus, Calculator, Settings, Building, FileSignature, CheckCircle, Clock, HardHat } from 'lucide-react';
 import { Employee, Contract, LeaveRequest, Payslip } from '../types';
+import { Badge, statusTone } from '../components/ui';
 
 export default function RhView() {
-  const { employees, contracts, leaveRequests, payslips, companyConfig, addEmployee, addLeaveRequest, addPayslip, addContract, updateLeaveRequestStatus, updatePayslipStatus, treasuryAccounts, registerSalaryAdvance } = useApp();
+  const { employees, contracts, leaveRequests, payslips, companyConfig, addEmployee, addLeaveRequest, addPayslip, addContract, updateLeaveRequestStatus, updatePayslipStatus, treasuryAccounts, registerSalaryAdvance, btpChantiers, btpAffectations, updateBtpChantier, addNotification } = useApp();
   const [activeTab, setActiveTab] = useState('DASHBOARD');
   const [showAddModal, setShowAddModal] = useState(false);
   const [modalType, setModalType] = useState(''); // 'EMPLOYEE', 'CONTRACT', 'LEAVE', 'PAYSLIP'
@@ -115,7 +116,8 @@ export default function RhView() {
             { id: 'CONTRACTS', label: 'Contrats', icon: FileSignature },
             { id: 'LEAVES', label: 'Congés', icon: Calendar },
             { id: 'PAYROLL', label: 'Paie (Guinée)', icon: Calculator },
-            { id: 'DECLARATIONS', label: 'Déclarations', icon: FileText }
+            { id: 'DECLARATIONS', label: 'Déclarations', icon: FileText },
+            ...(companyConfig.activeModules?.includes('BTP') ? [{ id: 'CHANTIERS', label: 'Validation Chantiers', icon: HardHat }] : [])
           ].map(tab => (
             <button 
               key={tab.id}
@@ -403,12 +405,87 @@ export default function RhView() {
         )}
 
         {/* --- DECLARATIONS --- */}
+        {activeTab === 'CHANTIERS' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">Validation RH des chantiers</h2>
+                <p className="text-[13px] text-slate-500 mt-0.5">Vérifiez les équipes affectées puis validez : votre accord débloque le démarrage du chantier.</p>
+              </div>
+            </div>
+
+            {btpChantiers.filter(c => !c.rh_validation).length === 0 ? (
+              <div className="text-center py-14">
+                <CheckCircle size={36} className="mx-auto text-emerald-400 mb-3" />
+                <p className="text-sm font-semibold text-slate-500">Tous les chantiers ont reçu la validation RH.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {btpChantiers.filter(c => !c.rh_validation).map(c => {
+                  const affs = btpAffectations.filter(a => a.chantier_id === c.id);
+                  const coutJournalier = affs.filter(a => a.statut === 'active').reduce((acc, a) => acc + (a.taux_journalier || 0), 0);
+                  return (
+                    <div key={c.id} className="card p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-900">{c.nom}</h3>
+                            <Badge tone={statusTone(c.statut)}>{c.statut.replace(/_/g, ' ')}</Badge>
+                          </div>
+                          <p className="text-[12.5px] text-slate-500 mt-0.5">{c.client} · démarrage prévu le {new Date(c.date_debut_prevue).toLocaleDateString('fr-FR')}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await updateBtpChantier(c.id, { rh_validation: true });
+                            await addNotification('COND_TRAVAUX', `Validation RH accordée pour « ${c.nom} » — le chantier peut être démarré (sous réserve de la validation Matériel).`, 'SUCCESS');
+                          }}
+                          className="btn btn-primary"
+                        ><CheckCircle size={14} /> Valider le démarrage</button>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3 text-[12.5px]">
+                        <div className="rounded-lg bg-slate-50 border border-slate-100 p-3">
+                          <p className="label !mb-1">Employés affectés</p>
+                          <p className="font-mono font-bold text-[15px]">{affs.filter(a => a.statut === 'active').length}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 border border-slate-100 p-3">
+                          <p className="label !mb-1">Coût MO journalier</p>
+                          <p className="font-mono font-bold text-[15px]">{coutJournalier.toLocaleString('fr-FR')} <span className="text-[10px] font-sans text-slate-400">GNF/j</span></p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 border border-slate-100 p-3">
+                          <p className="label !mb-1">Validation Matériel</p>
+                          <p className={`font-bold text-[13px] ${c.materiel_validation ? 'text-emerald-600' : 'text-rose-500'}`}>
+                            {c.materiel_validation ? '✓ accordée' : '✗ en attente'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {affs.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {affs.map(a => {
+                            const emp = employees.find(e => e.id === a.employee_id);
+                            return (
+                              <Badge key={a.id} tone={a.statut === 'active' ? 'blue' : 'neutral'}>
+                                {emp ? `${emp.firstName} ${emp.lastName}` : a.employee_id} · {a.role_chantier || '—'}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'DECLARATIONS' && (
           <div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-slate-800">Déclarations (CNSS & Impôts)</h2>
             </div>
-            
+
             <div className="bg-slate-50 border border-slate-200 rounded-sm p-6 text-center">
               <FileText size={48} className="mx-auto text-slate-400 mb-4" />
               <h3 className="font-semibold text-slate-800 text-lg mb-2">Tableau de Bord des Déclarations</h3>

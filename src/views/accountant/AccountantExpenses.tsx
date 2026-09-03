@@ -4,10 +4,11 @@ import { Plus, CheckCircle, Receipt } from 'lucide-react';
 import { ExpenseCategory, Expense } from '../../types';
 
 export function AccountantExpenses() {
-  const { expenses, addExpense, updateExpenseStatus, treasuryAccounts, addTransaction } = useApp();
+  const { expenses, addExpense, updateExpenseStatus, treasuryAccounts, addTransaction, btpChantiers } = useApp();
   const [showAdd, setShowAdd] = useState(false);
-  const [newExp, setNewExp] = useState<Partial<Expense>>({ 
-    category: 'AUTRE', amountHT: 0, tvaAmount: 0, amountTTC: 0, date: new Date().toISOString().slice(0, 10), description: '' 
+  const [chantierFilter, setChantierFilter] = useState('');
+  const [newExp, setNewExp] = useState<Partial<Expense>>({
+    category: 'AUTRE', amountHT: 0, tvaAmount: 0, amountTTC: 0, date: new Date().toISOString().slice(0, 10), description: '', chantier_id: ''
   });
   const [hasTva, setHasTva] = useState(false);
 
@@ -29,10 +30,11 @@ export function AccountantExpenses() {
       amountTTC: newExp.amountTTC || 0,
       description: newExp.description,
       date: newExp.date || new Date().toISOString().slice(0, 10),
+      chantier_id: newExp.chantier_id || '',
       status: 'PENDING'
     });
     setShowAdd(false);
-    setNewExp({ category: 'AUTRE', amountHT: 0, tvaAmount: 0, amountTTC: 0, date: new Date().toISOString().slice(0, 10), description: '' });
+    setNewExp({ category: 'AUTRE', amountHT: 0, tvaAmount: 0, amountTTC: 0, date: new Date().toISOString().slice(0, 10), description: '', chantier_id: '' });
   };
 
   const markPaid = async (expense: Expense, accountId: string) => {
@@ -91,6 +93,13 @@ export function AccountantExpenses() {
               </div>
             </div>
             <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Rattacher à un chantier BTP (optionnel)</label>
+              <select value={newExp.chantier_id || ''} onChange={e => setNewExp({ ...newExp, chantier_id: e.target.value })} className="w-full border-slate-300 rounded-sm text-sm">
+                <option value="">— Aucun (charge générale) —</option>
+                {btpChantiers.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Montant HT (GNF)</label>
               <input type="number" value={newExp.amountHT} onChange={e => handleAmountChange(Number(e.target.value), hasTva)} className="w-full border-slate-300 rounded-sm text-sm font-mono" />
             </div>
@@ -115,6 +124,17 @@ export function AccountantExpenses() {
         </div>
       )}
 
+      {/* Filtre par chantier (rentabilité BTP) */}
+      {btpChantiers.length > 0 && (
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Filtrer par chantier</label>
+          <select value={chantierFilter} onChange={e => setChantierFilter(e.target.value)} className="border-slate-300 rounded-sm text-sm py-1.5 px-2 max-w-xs">
+            <option value="">Toutes les dépenses</option>
+            {btpChantiers.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+          </select>
+        </div>
+      )}
+
       <div className="bg-white border border-slate-200 rounded-sm shadow-sm">
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-slate-600 font-medium">
@@ -129,11 +149,18 @@ export function AccountantExpenses() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {expenses.slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(exp => (
+            {expenses.filter(exp => !chantierFilter || exp.chantier_id === chantierFilter).slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(exp => (
               <tr key={exp.id} className="hover:bg-slate-50">
                 <td className="py-3 px-6 text-slate-500">{new Date(exp.date).toLocaleDateString()}</td>
                 <td className="py-3 px-6"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-sm text-[10px] uppercase font-bold">{exp.category}</span></td>
-                <td className="py-3 px-6 font-medium text-slate-800">{exp.description}</td>
+                <td className="py-3 px-6 font-medium text-slate-800">
+                  {exp.description}
+                  {exp.chantier_id && (
+                    <span className="ml-2 text-[9.5px] font-bold uppercase tracking-wide text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-1.5 py-0.5 align-middle">
+                      {btpChantiers.find(c => c.id === exp.chantier_id)?.nom?.slice(0, 22) ?? 'chantier'}
+                    </span>
+                  )}
+                </td>
                 <td className="py-3 px-6 text-right font-mono text-slate-600">{exp.amountHT?.toLocaleString()}</td>
                 <td className="py-3 px-6 text-right font-mono text-slate-500">{exp.tvaAmount > 0 ? `+${exp.tvaAmount?.toLocaleString()}` : '-'}</td>
                 <td className="py-3 px-6 text-right font-mono font-bold text-slate-800">{exp.amountTTC?.toLocaleString()} GNF</td>

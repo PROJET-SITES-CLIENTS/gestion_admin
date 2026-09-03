@@ -404,7 +404,7 @@ export interface BtpOffre {
 
 export interface BtpChantier {
   id: string;
-  offre_id?: string; 
+  offre_id?: string;
   nom: string;
   client: string;
   adresse: string;
@@ -418,6 +418,8 @@ export interface BtpChantier {
   materiel_validation?: boolean;
   qhse_unlock?: boolean;
   dg_unlock?: boolean;
+  /** Budget prévisionnel détaillé — transféré du chiffrage de l'offre gagnée. */
+  budget_detail?: BtpChiffrage;
 }
 
 export interface BtpJournalChantier {
@@ -462,6 +464,124 @@ export interface BtpSituationTravaux {
   montant_facture: number;
   valide_par_conducteur?: boolean;
   statut: BtpSituationStatus;
+  date_facturation?: string;
+}
+
+// --- EXTENSION BTP (Phases 1-5) ---
+
+/** Ligne de chiffrage structurée (Phase 2 — éditeur ETUDES). */
+export interface BtpChiffrageLigne {
+  famille: 'MATERIAUX' | 'MAIN_OEUVRE' | 'MATERIEL' | 'SOUS_TRAITANCE' | 'FRAIS_GENERAUX';
+  designation: string;
+  quantite: number;
+  pu: number;
+}
+
+export interface BtpChiffrage {
+  lignes: BtpChiffrageLigne[];
+  cout_total: number;
+  marge_pct: number;
+}
+
+/** Affectation d'un employé RH à un chantier (Phase 3). */
+export interface BtpAffectation {
+  id: string;
+  employee_id: string;
+  chantier_id: string;
+  date_debut: string;
+  date_fin?: string;
+  role_chantier?: string;
+  taux_journalier: number;
+  statut: 'active' | 'terminée';
+  created_by?: string;
+}
+
+/** Pointage journalier (Phase 3). */
+export interface BtpPointage {
+  id: string;
+  employee_id: string;
+  chantier_id: string;
+  date: string;
+  heures: number;
+  presence?: 'présent' | 'absent' | 'congé';
+  commentaire?: string;
+  created_by?: string;
+}
+
+/** Article de stock magasin (Phase 4). */
+export interface BtpArticle {
+  id: string;
+  reference?: string;
+  designation: string;
+  unite: string;
+  pu: number;
+  seuil_alerte?: number;
+}
+
+export type BtpBonCommandeStatus = 'brouillon' | 'soumis' | 'reçu' | 'annulé';
+
+export interface BtpBonCommandeLigne {
+  article_id: string;
+  designation: string;
+  quantite: number;
+  pu: number;
+}
+
+export interface BtpBonCommande {
+  id: string;
+  chantier_id: string;
+  fournisseur: string;
+  lignes: BtpBonCommandeLigne[];
+  total_ht: number;
+  date_souhaitee?: string;
+  statut: BtpBonCommandeStatus;
+  date_reception?: string;
+  created_by?: string;
+}
+
+export type BtpMouvementType = 'entree' | 'sortie_chantier' | 'retour';
+
+/** Mouvement de stock : '' = dépôt central (Phase 4). */
+export interface BtpMouvement {
+  id: string;
+  article_id: string;
+  type: BtpMouvementType;
+  quantite: number;
+  chantier_id?: string;
+  bc_id?: string;
+  motif?: string;
+  created_by?: string;
+}
+
+export type BtpDocumentType = 'plan' | 'pv_reception' | 'attestation' | 'contrat' | 'photo' | 'autre';
+
+/** GED chantier (Phase 5). */
+export interface BtpDocument {
+  id: string;
+  chantier_id: string;
+  type: BtpDocumentType;
+  nom: string;
+  url: string;
+  description?: string;
+  created_by?: string;
+}
+
+/** Agrégats financiers par chantier — calculés côté serveur (Phase 1). */
+export interface BtpChantierStat {
+  id: string;
+  budget_engage: number;
+  montant_situations_facturees: number;
+  montant_situations_attente: number;
+  cout_mo_reel: number;
+  heures_pointees: number;
+}
+
+/** Annuaire light (sans données personnelles ni salaires). */
+export interface BtpEmployeeDirectoryEntry {
+  id: string;
+  firstName: string;
+  lastName: string;
+  position?: string;
 }
 
 // --- AGROALIMENTAIRE / AGROBUSINESS MODELS ---

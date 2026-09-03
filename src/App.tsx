@@ -43,10 +43,12 @@ function GlobalErrorFallback({ error, resetErrorBoundary }: any) {
 
 import InternalMessenger from './components/InternalMessenger';
 import TaskBoard from './components/TaskBoard';
+import { BtpDashboardView } from './views/btp/BtpDashboardView';
 import { BtpOffresView } from './views/btp/BtpOffresView';
 import { BtpChantiersView } from './views/btp/BtpChantiersView';
 import { BtpEnginsView } from './views/btp/BtpEnginsView';
 import { BtpQhseView } from './views/btp/BtpQhseView';
+import { BtpMagasinView } from './views/btp/BtpMagasinView';
 import { AgroApproView } from './views/agro/AgroApproView';
 import { AgroProductionView } from './views/agro/AgroProductionView';
 import { AgroTracabiliteView } from './views/agro/AgroTracabiliteView';
@@ -92,6 +94,8 @@ function AppContent() {
     switch (activeMenu) {
       case 'MESSAGERIE': return <InternalMessenger />;
       case 'TASKS': return <TaskBoard />;
+      case 'BTP_DASHBOARD': return <BtpDashboardView />;
+      case 'BTP_MAGASIN': return <BtpMagasinView />;
       case 'BTP_OFFRES': return <BtpOffresView />;
       case 'BTP_CHANTIERS': return <BtpChantiersView />;
       case 'BTP_ENGINS': return <BtpEnginsView />;

@@ -29,6 +29,7 @@ require_once __DIR__ . '/../controllers/AccountingController.php';
 require_once __DIR__ . '/../controllers/TaskController.php';
 require_once __DIR__ . '/../controllers/CrudController.php';
 require_once __DIR__ . '/../controllers/AgroController.php';
+require_once __DIR__ . '/../controllers/BtpController.php';
 
 use App\core\Router;
 use App\core\Response;
@@ -133,6 +134,14 @@ $router->post('/api/crud/:table/:id/delete', [\App\controllers\CrudController::c
 // ------------------------------------------------------------------
 $router->post('/api/agro/lots-production', [\App\controllers\AgroController::class, 'createLotProduction']);
 $router->post('/api/agro/livraisons', [\App\controllers\AgroController::class, 'prepareLivraison']);
+
+// ------------------------------------------------------------------
+// Opérations BTP atomiques (extension)
+//   - facturation d'une situation → trésorerie + notification
+//   - réception d'un bon de commande → stock + dépense noyau + notification
+// ------------------------------------------------------------------
+$router->post('/api/btp/situations/:id/facturer', [\App\controllers\BtpController::class, 'factureSituation']);
+$router->post('/api/btp/bons/:id/recevoir', [\App\controllers\BtpController::class, 'recevoirBonCommande']);
 
 // ------------------------------------------------------------------
 // Uploads

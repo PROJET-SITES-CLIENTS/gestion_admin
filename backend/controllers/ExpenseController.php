@@ -40,6 +40,7 @@ class ExpenseController {
             'status' => 'PENDING',
             'accountId' => Sanitizer::text($body['accountId'] ?? '', 64),
             'attachmentUrl' => Sanitizer::text($body['attachmentUrl'] ?? '', 300),
+            'chantier_id' => Sanitizer::text($body['chantier_id'] ?? '', 64),
             'createdBy' => $request->user['id'] ?? '',
             'createdAt' => date('c'),
         ];

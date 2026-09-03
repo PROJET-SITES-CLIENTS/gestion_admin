@@ -5,6 +5,7 @@ use App\core\Request;
 use App\core\Response;
 use App\core\Database;
 use App\core\AuthMiddleware;
+use App\core\Sanitizer;
 
 /**
  * GET /api/data — alimentation initiale du frontend.
@@ -133,6 +134,18 @@ class DataController {
             'btpIncidents' => array_values($db->getTable('btpIncidents')),
             'btpJournaux' => array_values($db->getTable('btpJournaux')),
             'btpSituations' => array_values($db->getTable('btpSituations')),
+            'btpAffectations' => array_values($db->getTable('btpAffectations')),
+            'btpPointages' => array_values($db->getTable('btpPointages')),
+            'btpArticles' => array_values($db->getTable('btpArticles')),
+            'btpBonCommandes' => array_values($db->getTable('btpBonCommandes')),
+            'btpMouvements' => array_values($db->getTable('btpMouvements')),
+            'btpDocuments' => array_values($db->getTable('btpDocuments')),
+            // Agrégats financiers par chantier (les dépenses brutes restent
+            // réservées GERANT/COMPTABLE — ici seuls les totaux partent).
+            'btpChantierStats' => self::computeChantierStats($db),
+            // Annuaire light (sans salaires) pour les rôles BTP (affectations,
+            // pointages) — les dossiers RH complets restent réservés GERANT/RH.
+            'btpEmployeeDirectory' => self::employeeDirectory($db),
 
             // Module Agro
             'agroLotMatierePremieres' => array_values($db->getTable('agroLotMatierePremieres')),
@@ -147,5 +160,83 @@ class DataController {
             'agendaEvents' => array_values($db->getTable('agendaEvents')),
             'devisRecords' => array_values($db->getTable('devisRecords')),
         ]);
+    }
+
+    /**
+     * Agrégats par chantier : dépenses engagées, situations facturées/en
+     * attente, coût de main d'œuvre réel (pointages × taux d'affectation).
+     * Calculés à la lecture — aucune donnée brute RH/finance n'est exposée.
+     */
+    private static function computeChantierStats(Database $db): array {
+        $expenses = $db->getTable('expenses');
+        $situations = $db->getTable('btpSituations');
+        $pointages = $db->getTable('btpPointages');
+        $affectations = $db->getTable('btpAffectations');
+
+        // Taux journalier par (employé, chantier)
+        $taux = [];
+        foreach ($affectations as $a) {
+            $key = ($a['employee_id'] ?? '') . '|' . ($a['chantier_id'] ?? '');
+            $taux[$key] = Sanitizer::float($a['taux_journalier'] ?? 0);
+        }
+
+        $stats = [];
+        foreach ($db->getTable('btpChantiers') as $c) {
+            $id = $c['id'] ?? '';
+            $stats[$id] = [
+                'id' => $id,
+                'budget_engage' => 0.0,
+                'montant_situations_facturees' => 0.0,
+                'montant_situations_attente' => 0.0,
+                'cout_mo_reel' => 0.0,
+                'heures_pointees' => 0.0,
+            ];
+        }
+
+        foreach ($expenses as $e) {
+            $cid = $e['chantier_id'] ?? '';
+            if ($cid === '' || !isset($stats[$cid])) continue;
+            if (($e['status'] ?? '') === 'REJECTED') continue;
+            // TTC (format actuel), sinon champ legacy 'amount'.
+            $montant = isset($e['amountTTC']) ? Sanitizer::float($e['amountTTC']) : Sanitizer::float($e['amount'] ?? 0);
+            $stats[$cid]['budget_engage'] += $montant;
+        }
+
+        foreach ($situations as $s) {
+            $cid = $s['chantier_id'] ?? '';
+            if (!isset($stats[$cid])) continue;
+            $montant = Sanitizer::float($s['montant_facture'] ?? 0);
+            if (($s['statut'] ?? '') === 'facturée') {
+                $stats[$cid]['montant_situations_facturees'] += $montant;
+            } elseif (($s['statut'] ?? '') === 'en_attente_facturation') {
+                $stats[$cid]['montant_situations_attente'] += $montant;
+            }
+        }
+
+        foreach ($pointages as $p) {
+            $cid = $p['chantier_id'] ?? '';
+            if (!isset($stats[$cid])) continue;
+            $heures = Sanitizer::float($p['heures'] ?? 0);
+            $stats[$cid]['heures_pointees'] += $heures;
+            $key = ($p['employee_id'] ?? '') . '|' . $cid;
+            $tauxJournalier = $taux[$key] ?? 0;
+            $stats[$cid]['cout_mo_reel'] += ($heures / 8.0) * $tauxJournalier;
+        }
+
+        return array_values($stats);
+    }
+
+    /** Annuaire minimal (id, nom) — pas de salaires ni données personnelles. */
+    private static function employeeDirectory(Database $db): array {
+        $out = [];
+        foreach ($db->getTable('employees') as $e) {
+            $out[] = [
+                'id' => $e['id'] ?? '',
+                'firstName' => $e['firstName'] ?? '',
+                'lastName' => $e['lastName'] ?? '',
+                'position' => $e['position'] ?? '',
+            ];
+        }
+        return $out;
     }
 }

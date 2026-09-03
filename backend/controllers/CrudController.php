@@ -53,13 +53,16 @@ class CrudController {
             ],
         ],
         'btpChantiers' => [
-            'idKey' => 'id', 'roles' => self::BTP_ROLES,
+            'idKey' => 'id',
+            // RH inclus : validation rh_validation du circuit de démarrage (Phase 3).
+            'roles' => ['GERANT', 'RH', 'COMMERCIAL', 'ETUDES', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'QHSE_BTP', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'DEVELOPPEUR'],
             'defaults' => ['statut' => 'planification'],
             'fields' => [
                 'offre_id' => ['text', 64], 'nom' => ['text', 250], 'client' => ['text', 200],
                 'adresse' => ['text', 300], 'date_debut_prevue' => ['date'], 'date_fin_prevue' => ['date'],
                 'budget_initial' => ['float'], 'conducteur_travaux_id' => ['text', 64],
                 'chef_chantier_id' => ['text', 64],
+                'budget_detail' => ['array'],
                 'rh_validation' => ['bool'], 'materiel_validation' => ['bool'],
                 'qhse_unlock' => ['bool'], 'dg_unlock' => ['bool'],
                 'statut' => ['enum', ['planification', 'en_cours', 'suspendu', 'réception_provisoire', 'réception_définitive', 'clôturé']],
@@ -103,6 +106,78 @@ class CrudController {
                 'pct_avancement_declare' => ['float'], 'montant_facture' => ['float'],
                 'valide_par_conducteur' => ['bool'],
                 'statut' => ['enum', ['brouillon', 'en_attente_facturation', 'facturée']],
+            ],
+        ],
+
+        // ---------- EXTENSION BTP — Phase 3 : main d'œuvre ----------
+        'btpAffectations' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'RH', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'active'],
+            'userField' => 'created_by',
+            'fields' => [
+                'employee_id' => ['text', 64], 'chantier_id' => ['text', 64],
+                'date_debut' => ['date'], 'date_fin' => ['date'],
+                'role_chantier' => ['text', 100], 'taux_journalier' => ['float'],
+                'statut' => ['enum', ['active', 'terminée']],
+            ],
+        ],
+        'btpPointages' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'DEVELOPPEUR'],
+            'userField' => 'created_by',
+            'fields' => [
+                'employee_id' => ['text', 64], 'chantier_id' => ['text', 64],
+                'date' => ['date'], 'heures' => ['float'],
+                'presence' => ['enum', ['présent', 'absent', 'congé']],
+                'commentaire' => ['text', 500],
+            ],
+        ],
+
+        // ---------- EXTENSION BTP — Phase 4 : achats & stock ----------
+        'btpArticles' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'DEVELOPPEUR'],
+            'fields' => [
+                'reference' => ['text', 50], 'designation' => ['text', 200],
+                'unite' => ['text', 20], 'pu' => ['float'], 'seuil_alerte' => ['float'],
+            ],
+        ],
+        'btpBonCommandes' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'brouillon'],
+            'userField' => 'created_by',
+            'fields' => [
+                'chantier_id' => ['text', 64], 'fournisseur' => ['text', 200],
+                'lignes' => ['array'], 'total_ht' => ['float'],
+                'date_souhaitee' => ['date'],
+                'statut' => ['enum', ['brouillon', 'soumis', 'reçu', 'annulé']],
+            ],
+        ],
+        'btpMouvements' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'CHEF_CHANTIER', 'DEVELOPPEUR'],
+            'userField' => 'created_by',
+            'fields' => [
+                'article_id' => ['text', 64],
+                'type' => ['enum', ['entree', 'sortie_chantier', 'retour']],
+                'quantite' => ['float'],
+                'chantier_id' => ['text', 64], // '' = dépôt central
+                'bc_id' => ['text', 64], 'motif' => ['text', 300],
+            ],
+        ],
+
+        // ---------- EXTENSION BTP — Phase 5 : GED chantier ----------
+        'btpDocuments' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COMMERCIAL', 'ETUDES', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'QHSE_BTP', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'ASSISTANTE', 'DEVELOPPEUR'],
+            'userField' => 'created_by',
+            'fields' => [
+                'chantier_id' => ['text', 64],
+                'type' => ['enum', ['plan', 'pv_reception', 'attestation', 'contrat', 'photo', 'autre']],
+                'nom' => ['text', 200], 'url' => ['text', 300],
+                'description' => ['multiline', 2000],
             ],
         ],
 
