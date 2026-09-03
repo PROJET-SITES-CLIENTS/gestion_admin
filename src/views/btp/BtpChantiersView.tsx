@@ -187,6 +187,19 @@ export const BtpChantiersView = () => {
                 </span>
               </div>
 
+              {c.statut === 'planification' && (currentRole === 'RESP_MATERIEL' || currentRole === 'GERANT') && !c.materiel_validation && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await updateBtpChantier(c.id, { materiel_validation: true });
+                    pushToast(`Matériel validé pour « ${c.nom} ».`, 'SUCCESS');
+                  }}
+                  className="w-full py-2 mb-2 bg-blue-600 text-white rounded-lg text-[12.5px] font-semibold hover:bg-blue-700"
+                >
+                  Valider le Matériel (Resp. Matériel)
+                </button>
+              )}
+
               {c.statut === 'planification' && (currentRole === 'COND_TRAVAUX' || currentRole === 'GERANT') && (
                 <button
                   onClick={(e) => { e.stopPropagation(); handleStartChantier(c.id); }}
