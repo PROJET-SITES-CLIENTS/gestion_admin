@@ -39,12 +39,12 @@ export function AccountantExpenses() {
 
   const markPaid = async (expense: Expense, accountId: string) => {
     await updateExpenseStatus(expense.id, 'PAID');
-    
-    // Create transaction
+
+    // Create transaction (fallback format legacy sans TVA)
     addTransaction({
       accountId,
       type: 'DEBIT',
-      amount: expense.amountTTC,
+      amount: expense.amountTTC || expense.amount || 0,
       referenceId: expense.id,
       category: expense.category,
       description: `Paiement Charge: ${expense.description}`
@@ -161,9 +161,9 @@ export function AccountantExpenses() {
                     </span>
                   )}
                 </td>
-                <td className="py-3 px-6 text-right font-mono text-slate-600">{exp.amountHT?.toLocaleString()}</td>
+                <td className="py-3 px-6 text-right font-mono text-slate-600">{(exp.amountHT ?? exp.amount)?.toLocaleString()}</td>
                 <td className="py-3 px-6 text-right font-mono text-slate-500">{exp.tvaAmount > 0 ? `+${exp.tvaAmount?.toLocaleString()}` : '-'}</td>
-                <td className="py-3 px-6 text-right font-mono font-bold text-slate-800">{exp.amountTTC?.toLocaleString()} GNF</td>
+                <td className="py-3 px-6 text-right font-mono font-bold text-slate-800">{(exp.amountTTC ?? exp.amount)?.toLocaleString()} GNF</td>
                 <td className="py-3 px-6 text-center">
                   {exp.status === 'PAID' ? (
                     <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-sm text-xs font-semibold">PAYÉ</span>

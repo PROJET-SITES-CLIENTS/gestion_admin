@@ -168,12 +168,16 @@ export interface Expense {
   amountHT: number;
   tvaAmount: number;
   amountTTC: number;
+  /** Ancien format (avant TVA) — encore présent dans les données seed. */
+  amount?: number;
   description: string;
   date: string;
   status: 'PENDING' | 'PAID' | 'REJECTED';
   rejectionReason?: string;
   accountId?: string; // Compte utilisé pour le paiement
   attachmentUrl?: string; // New: Proof of purchase
+  /** Rattachement à un chantier BTP (rentabilité par chantier). */
+  chantier_id?: string;
 }
 
 export type ProspectQualification = 'CHAUD' | 'TIEDE' | 'FROID' | 'NON_QUALIFIE';

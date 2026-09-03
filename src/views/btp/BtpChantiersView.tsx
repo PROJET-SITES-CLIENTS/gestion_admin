@@ -2,7 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../../store';
 import { BtpChantierStatus, BtpChiffrageLigne } from '../../types';
 import { Badge, statusTone, Progress } from '../../components/ui';
-import { Wallet, Users, Clock, FileText, Upload, Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import { openSecureFile } from '../../utils/secureFile';
+import { Wallet, Users, Clock, FileText, Upload, Plus, CheckCircle2 } from 'lucide-react';
 
 const FAMILLES_LABEL: Record<string, string> = {
   MATERIAUX: 'Matériaux', MAIN_OEUVRE: 'Main d\'œuvre', MATERIEL: 'Matériel',
@@ -476,7 +477,12 @@ export const BtpChantiersView = () => {
                       <p className="text-[12px] text-slate-400">Plans, PV de réception, attestations… aucun document pour l'instant.</p>
                     )}
                     {btpDocuments.filter(d => d.chantier_id === selectedChantier.id).map(d => (
-                      <a key={d.id} href={d.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2.5 rounded-lg border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors group">
+                      <button
+                        key={d.id}
+                        onClick={() => openSecureFile(d.url)}
+                        title="Ouvrir le document (téléchargement sécurisé)"
+                        className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors group text-left"
+                      >
                         <span className="h-8 w-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 shrink-0 group-hover:bg-white">
                           <FileText size={13} />
                         </span>
@@ -484,7 +490,7 @@ export const BtpChantiersView = () => {
                           <span className="block text-[12.5px] font-semibold text-slate-800 truncate">{d.nom}</span>
                           <span className="block text-[10px] text-slate-400 uppercase tracking-wide">{d.type.replace('_', ' ')}{d.description ? ` · ${d.description}` : ''}</span>
                         </span>
-                      </a>
+                      </button>
                     ))}
                   </div>
 

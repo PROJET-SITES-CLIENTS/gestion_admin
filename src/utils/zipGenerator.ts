@@ -2,13 +2,25 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Project, CompanyConfig } from '../types';
 import { getProjectPDFBlob } from './pdfGenerator';
+import { getAuthToken } from '../apiClient';
 
 const base64ToBlob = async (dataStr: string): Promise<Blob | null> => {
   try {
     if (!dataStr) return null;
 
-    // Check if it's a URL (http/https or relative api path)
-    if (dataStr.startsWith('http') || dataStr.startsWith('/')) {
+    // Chemin interne (/uploads/...) : le header Authorization est requis —
+    // un fetch nu renverrait 401 et le fichier manquerait silencieusement.
+    if (dataStr.startsWith('/')) {
+      const token = getAuthToken();
+      const res = await fetch(dataStr, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) return null;
+      return await res.blob();
+    }
+
+    // URL externe (http/https)
+    if (dataStr.startsWith('http')) {
       const response = await fetch(dataStr);
       if (!response.ok) return null;
       return await response.blob();

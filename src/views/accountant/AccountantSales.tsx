@@ -6,22 +6,12 @@ import {
   TrendingUp, Calendar, Filter, Plus, Trash2, PieChart, BarChart3, Receipt, Activity, Target
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
-import { Project } from '../../types';
+import { Project, Expense } from '../../types';
 import { ProjectDetails } from '../../components/ProjectDetails';
 import { PaymentPlanManager } from '../../components/PaymentPlanManager';
 import { generateProformaPDF, generateReceiptPDF } from '../../utils/pdfGenerator';
 import { useProjectFilter } from '../../hooks/useProjectFilter';
 import { ProjectFilterBar } from '../../components/ProjectFilterBar';
-
-export type ExpenseCategory = 'SALAIRE' | 'LOYER' | 'ELECTRICITE' | 'INTERNET' | 'IMPOTS' | 'AUTRE';
-
-export interface Expense {
-  id: string;
-  category: ExpenseCategory;
-  amount: number;
-  date: string;
-  description: string;
-}
 
 export default function AccountantSales() {
   const { projects, companyConfig, expenses, addExpense, deleteExpense, updateCompanyConfig, confirmPaymentAccountant, generateDocument, savePaymentPlan, payInstallmentAndGenerateReceipt, alertUnpaid } = useApp();
@@ -66,14 +56,17 @@ export default function AccountantSales() {
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newExpense.amount || !newExpense.category || !newExpense.description) return;
-    const expenseToAdd: Expense = {
-      id: Date.now().toString(),
-      category: newExpense.category as ExpenseCategory,
-      amount: Number(newExpense.amount),
+    // Format harmonisé avec le noyau : sans TVA → HT = TTC = montant.
+    const montant = Number(newExpense.amount);
+    addExpense({
+      category: newExpense.category as Expense['category'],
+      amountHT: montant,
+      tvaAmount: 0,
+      amountTTC: montant,
       date: newExpense.date || new Date().toISOString().slice(0, 10),
-      description: newExpense.description
-    };
-    addExpense(expenseToAdd);
+      description: newExpense.description,
+      status: 'PENDING'
+    } as Omit<Expense, 'id'>);
     setNewExpense({ category: 'AUTRE', amount: 0, date: new Date().toISOString().slice(0, 10), description: '' });
   };
 
@@ -1164,7 +1157,7 @@ export default function AccountantSales() {
                  <div className="grid grid-cols-2 gap-3">
                    <div>
                      <label className="text-[10px] uppercase font-semibold text-slate-500 mb-1 block">Catégorie</label>
-                     <select value={newExpense.category} onChange={e => setNewExpense({...newExpense, category: e.target.value as ExpenseCategory})} className="w-full bg-white border border-slate-200 rounded-sm p-2 text-sm focus:outline-rose-500">
+                     <select value={newExpense.category} onChange={e => setNewExpense({...newExpense, category: e.target.value as Expense['category']})} className="w-full bg-white border border-slate-200 rounded-sm p-2 text-sm focus:outline-rose-500">
                        <option value="SALAIRE">Masse Salariale</option>
                        <option value="LOYER">Loyer</option>
                        <option value="ELECTRICITE">Électricité & Eau</option>
