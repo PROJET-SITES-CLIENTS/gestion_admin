@@ -21,3 +21,6 @@ backend/data/
 
 # Historique archivé (scripts de réparation et anciens déploiements)
 _archive/
+
+# Vercel
+.vercel/

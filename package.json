@@ -11,14 +11,19 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "backup": "node scripts/backup-db.cjs"
+    "backup": "node scripts/backup-db.cjs",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/file-saver": "^2.0.7",
     "@types/pdfmake": "^0.3.3",
     "@vitejs/plugin-react": "^5.0.4",
+    "express": "^5.2.1",
     "file-saver": "^2.0.5",
+    "jsonwebtoken": "^9.0.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^13.1.1",
@@ -27,6 +32,7 @@
     "react-dom": "^19.0.1",
     "react-error-boundary": "^6.1.2",
     "recharts": "^3.8.1",
+    "serverless-http": "^4.0.0",
     "vite": "^6.2.3"
   },
   "devDependencies": {

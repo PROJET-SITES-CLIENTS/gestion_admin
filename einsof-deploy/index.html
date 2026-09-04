@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Einsof — Suite de gestion premium : commercial, comptabilité, RH, BTP et agro-industrie." />
+    <meta name="theme-color" content="#171514" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23171514'/%3E%3Cpath d='M20 44V20h24v6H27v4.5h14V36H27v8z' fill='%23CCAC60'/%3E%3C/svg%3E" />
+    <title>Einsof — Suite de Gestion</title>
+    <style>
+      /* Écran de démarrage : remplacé par React au montage (#root) */
+      .einsof-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: #171514;
+        z-index: 9999;
+        transition: opacity .4s ease;
+      }
+      .einsof-splash .mark {
+        width: 56px; height: 56px;
+        border-radius: 14px;
+        background: linear-gradient(160deg, #1f1c1a, #262421);
+        border: 1px solid rgba(204, 172, 96, .35);
+        display: flex; align-items: center; justify-content: center;
+        font: 700 26px/1 Inter, system-ui, sans-serif;
+        color: #CCAC60;
+        box-shadow: 0 0 60px rgba(204, 172, 96, .18);
+        animation: splash-pulse 2.2s ease-in-out infinite;
+      }
+      .einsof-splash .word {
+        font: italic 400 22px/1 "Instrument Serif", Georgia, serif;
+        color: #CCC7BD;
+        letter-spacing: .04em;
+      }
+      .einsof-splash .bar {
+        width: 148px; height: 2px;
+        border-radius: 999px;
+        background: #262421;
+        overflow: hidden;
+      }
+      .einsof-splash .bar::after {
+        content: "";
+        display: block; height: 100%; width: 40%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, #CCAC60, transparent);
+        animation: splash-slide 1.2s ease-in-out infinite;
+      }
+      @keyframes splash-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+      @keyframes splash-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+    </style>
+    <script type="module" crossorigin src="/assets/index-D4GEmlc4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DNcTxqet.css">
+  </head>
+  <body>
+    <div id="root">
+      <div class="einsof-splash">
+        <div class="mark">E</div>
+        <div class="word">Einsof · Gestion</div>
+        <div class="bar"></div>
+      </div>
+    </div>
+  </body>
+</html>

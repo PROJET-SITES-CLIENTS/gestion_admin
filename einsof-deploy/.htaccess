@@ -1,0 +1,40 @@
+﻿# ============================================================
+# EINSOF ERP - Configuration Apache (racine du site)
+# ============================================================
+
+# --- Protection des fichiers sensibles ---
+<FilesMatch "^(db\.json|\.env.*|.*\.(sql|md|cjs|log))$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Pas de listage des rÃ©pertoires
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # En-tÃªte Authorization transmis au PHP (JWT)
+  RewriteCond %{HTTP:Authorization} ^(.*)
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
+  # API et fichiers uploadÃ©s -> routeur PHP (l'auth est vÃ©rifiÃ©e par l'application)
+  RewriteRule ^api(/.*)?$ backend/public/index.php [L,QSA]
+  RewriteRule ^uploads(/.*)?$ backend/public/index.php [L,QSA]
+
+  # AccÃ¨s direct aux sources du backend interdit.
+  # IMPORTANT : la garde REDIRECT_STATUS Ã©vite de bloquer la rÃ©Ã©criture
+  # INTERNE vers backend/public/index.php (sinon l'API renverrait 403).
+  RewriteCond %{ENV:REDIRECT_STATUS} ^$
+  RewriteRule ^backend/ - [F,L]
+
+  # SPA React : tout le reste sert index.html
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.html [L,QSA]
+</IfModule>
