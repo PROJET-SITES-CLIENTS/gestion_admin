@@ -18,6 +18,28 @@ export default function AccountantSales() {
   const { filters, setFilters, filteredProjects } = useProjectFilter(projects);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+
+  // Brouillon local des champs société : commit au blur (pas de POST à chaque frappe)
+  const [companyDraft, setCompanyDraft] = useState({
+    companyName: '', companyAddress: '', companyId: '', companyEmail: '', companyPhone: '', bankingDetails: ''
+  });
+  useEffect(() => {
+    setCompanyDraft({
+      companyName: companyConfig.companyName || '',
+      companyAddress: companyConfig.companyAddress || '',
+      companyId: companyConfig.companyId || '',
+      companyEmail: companyConfig.companyEmail || '',
+      companyPhone: companyConfig.companyPhone || '',
+      bankingDetails: companyConfig.bankingDetails || ''
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyConfig.companyName, companyConfig.companyAddress, companyConfig.companyId, companyConfig.companyEmail, companyConfig.companyPhone, companyConfig.bankingDetails]);
+  const commitCompanyDraft = (field: string) => (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const v = e.target.value;
+    if ((companyConfig as any)[field] === v) return;
+    updateCompanyConfig({ ...companyConfig, [field]: v } as any);
+  };
+
   const [activeDashboardTab, setActiveDashboardTab] = useState<'PROJECTS' | 'FINANCES'>('PROJECTS');
   const [paymentPanelMode, setPaymentPanelMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
   const [customAmounts, setCustomAmounts] = useState<{ [key: string]: number }>({});
@@ -164,37 +186,10 @@ export default function AccountantSales() {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
-  // Auto-initialize standard locked 75/25 payment plan when project has budget but no plan set yet
-  useEffect(() => {
-    if (selectedProject && selectedProject.budget && !selectedProject.paymentPlan) {
-      const price = selectedProject.budget || 0;
-      if (price > 0) {
-        const defaultPlan = {
-          totalAmount: price,
-          status: 'LOCKED' as const,
-          installments: [
-            {
-              id: 'acompte',
-              name: 'Acompte (75%)',
-              percentage: 75,
-              amount: Math.round(price * 0.75),
-              expectedDate: new Date().toISOString().split('T')[0],
-              status: 'PENDING' as const
-            },
-            {
-              id: 'solde',
-              name: 'Solde (25%)',
-              percentage: 25,
-              amount: Math.round(price * 0.25),
-              expectedDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              status: 'PENDING' as const
-            }
-          ]
-        };
-        savePaymentPlan(selectedProject.id, defaultPlan);
-      }
-    }
-  }, [selectedProjectId, selectedProject, savePaymentPlan]);
+  // NOTE (audit Vague A) : l'ancien useEffect auto-créait ET verrouillait un
+  // paymentPlan 75/25 en simple side-effect d'OUVERTURE d'un projet (écriture
+  // en base non intentionnelle). Le plan par défaut est désormais initialisé
+  // par le PaymentPlanManager quand le comptable choisit d'en créer un.
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, field: 'signatureUrl' | 'stampUrl') => {
     const file = e.target.files?.[0];
@@ -214,8 +209,9 @@ export default function AccountantSales() {
   // DETAIL VIEW FOR SELECTED PROJECT
   // -------------------------------------------------------------
   if (selectedProject) {
-    const hasCommercial = true;
-    const hasClient = true;
+    // Checklist RÉELLE (l'ancienne version affichait tout validé en dur)
+    const hasCommercial = !!selectedProject.commercialPaymentConfirm;
+    const hasClient = !!(selectedProject.clientContact || selectedProject.clientName);
     const hasProforma = selectedProject.documents?.some(d => d.type === 'PROFORMA');
     const isPaid = selectedProject.paymentStatus === 'PAID';
     const price = selectedProject.budget || 0;
@@ -306,7 +302,7 @@ export default function AccountantSales() {
             {/* Box 3: Remaining balance */}
             <div className="bg-white border border-slate-200/85 rounded-sm p-4 shadow-none flex items-center justify-between">
               <div className="space-y-1">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Solde Restarant à régler</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Solde restant à régler</span>
                 <span className={`text-xl font-semibold font-mono ${totalRemaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                   {totalRemaining.toLocaleString('fr-FR')} GNF
                 </span>
@@ -377,7 +373,7 @@ export default function AccountantSales() {
                     onClick={() => setPaymentPanelMode('SIMPLE')}
                     className="text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors self-end pr-2 flex items-center gap-1 cursor-pointer"
                   >
-                    â†  Retour au suivi simplifié (75% / 25%)
+                    ← Retour au suivi simplifié (75% / 25%)
                   </button>
                 </div>
               ) : (
@@ -740,11 +736,10 @@ export default function AccountantSales() {
     <div className="flex flex-col bg-slate-50/50 animate-in fade-in duration-500">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 pb-2">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 flex items-center gap-3">
-            <Calculator className="text-emerald-600" size={32} />
-            Espace Comptabilité
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+            <span className="font-serif italic font-normal text-indigo-600 mr-1.5">Les ventes</span>& encaissements
           </h1>
-          <p className="text-slate-500 mt-2 text-lg">Gérez la facturation, suivez les encaissements en temps réel et validez les reçus officiels.</p>
+          <p className="text-[13px] text-slate-500 mt-1">Facturation, suivi des encaissements en temps réel et reçus officiels.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
           <div className="bg-slate-50 text-slate-800 px-5 py-3 rounded-sm text-sm font-semibold border border-slate-200 shadow-none flex-1 sm:flex-none text-center">
@@ -761,65 +756,62 @@ export default function AccountantSales() {
       </div>
 
       {showConfig && (
-        <div className="bg-slate-900 p-4 rounded-sm shadow-none text-slate-300 animate-in slide-in-from-top-4 duration-500 relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 text-slate-800 opacity-50 cursor-none">
-            <Settings size={200} />
-          </div>
-          <div className="relative z-10 w-full max-w-4xl mx-auto">
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold text-white mb-2">Signature, Cachet & Banque</h2>
-              <p className="text-slate-400">Ces éléments sont automatiquement apposés sur les factures et reçus de paiement.</p>
+        <div className="card p-6 animate-[fade-up_.3s_cubic-bezier(.22,1,.36,1)]">
+          <div className="w-full max-w-4xl mx-auto">
+            <div className="mb-6">
+              <h2 className="text-lg font-bold text-slate-900">Configuration fiscale — signature, cachet & banque</h2>
+              <p className="text-[13px] text-slate-500 mt-0.5">Apposés automatiquement sur les factures et reçus. Modifications enregistrées à la sortie du champ.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-slate-800 p-4 rounded-sm border border-slate-700 shadow-inner flex flex-col gap-4">
-                <h3 className="font-medium text-slate-300 mb-2 border-b border-slate-700 pb-2">Informations Légales de l'Entreprise</h3>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5 flex flex-col gap-4">
+                <h3 className="font-medium text-slate-800 mb-2 border-b border-slate-200 pb-2">Informations Légales de l'Entreprise</h3>
                 
                 <div>
-                  <label className="text-xs text-slate-500 uppercase font-semibold">Nom de l'entreprise</label>
-                  <input type="text" value={companyConfig.companyName || ''} onChange={(e) => updateCompanyConfig({...companyConfig, companyName: e.target.value})} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="Ex: Mon Agence Web SRL" />
-                </div>
-                
-                <div>
-                  <label className="text-xs text-slate-500 uppercase font-semibold">Adresse complète</label>
-                  <input type="text" value={companyConfig.companyAddress || ''} onChange={(e) => updateCompanyConfig({...companyConfig, companyAddress: e.target.value})} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="Ex: 123 Rue de la Paix, 75000 Paris" />
+                  <label className="label !mb-1">Nom de l'entreprise</label>
+                  <input type="text" value={companyDraft.companyName} onChange={(e) => setCompanyDraft(prev => ({ ...prev, companyName: e.target.value }))} onBlur={commitCompanyDraft('companyName')} className="input" placeholder="Ex: Einsof Digit SARL" />
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-500 uppercase font-semibold">Identifiant (SIRET / IFU / RCCM)</label>
-                  <input type="text" value={companyConfig.companyId || ''} onChange={(e) => updateCompanyConfig({...companyConfig, companyId: e.target.value})} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="Ex: Siret 12345678900012" />
+                  <label className="label !mb-1">Adresse complète</label>
+                  <input type="text" value={companyDraft.companyAddress} onChange={(e) => setCompanyDraft(prev => ({ ...prev, companyAddress: e.target.value }))} onBlur={commitCompanyDraft('companyAddress')} className="input" placeholder="Ex: Conakry, République de Guinée" />
+                </div>
+
+                <div>
+                  <label className="label !mb-1">Identifiant (RCCM / NIF / IFU)</label>
+                  <input type="text" value={companyDraft.companyId} onChange={(e) => setCompanyDraft(prev => ({ ...prev, companyId: e.target.value }))} onBlur={commitCompanyDraft('companyId')} className="input" placeholder="Ex: RCCM/GC-KAL 2026 B 1234" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-slate-500 uppercase font-semibold">Email</label>
-                    <input type="email" value={companyConfig.companyEmail || ''} onChange={(e) => updateCompanyConfig({...companyConfig, companyEmail: e.target.value})} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="contact@agence.com" />
+                    <label className="label !mb-1">Email</label>
+                    <input type="email" value={companyDraft.companyEmail} onChange={(e) => setCompanyDraft(prev => ({ ...prev, companyEmail: e.target.value }))} onBlur={commitCompanyDraft('companyEmail')} className="input" placeholder="contact@einsof.gn" />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 uppercase font-semibold">Téléphone</label>
-                    <input type="text" value={companyConfig.companyPhone || ''} onChange={(e) => updateCompanyConfig({...companyConfig, companyPhone: e.target.value})} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="+33 1 23 45 67 89" />
+                    <label className="label !mb-1">Téléphone</label>
+                    <input type="text" value={companyDraft.companyPhone} onChange={(e) => setCompanyDraft(prev => ({ ...prev, companyPhone: e.target.value }))} onBlur={commitCompanyDraft('companyPhone')} className="input" placeholder="+224 620 00 00 00" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 border-t border-slate-700 pt-4 mt-2">
                   <div>
-                    <label className="text-xs text-slate-500 uppercase font-semibold">Objectif Clients (par mois)</label>
-                    <input type="number" min="1" value={localClientTarget} onChange={(e) => setLocalClientTarget(e.target.value)} onBlur={handleSaveTargets} onKeyDown={e => e.key === 'Enter' && handleSaveTargets()} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="Ex: 30" />
+                    <label className="label !mb-1">Objectif Clients (par mois)</label>
+                    <input type="number" min="1" value={localClientTarget} onChange={(e) => setLocalClientTarget(e.target.value)} onBlur={handleSaveTargets} onKeyDown={e => e.key === 'Enter' && handleSaveTargets()} className="input" placeholder="Ex: 30" />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 uppercase font-semibold">Tarif unitaire cible (GNF)</label>
-                    <input type="number" min="0" value={localTargetAmount} onChange={(e) => setLocalTargetAmount(e.target.value)} onBlur={handleSaveTargets} onKeyDown={e => e.key === 'Enter' && handleSaveTargets()} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500" placeholder="Ex: 2000000" />
+                    <label className="label !mb-1">Tarif unitaire cible (GNF)</label>
+                    <input type="number" min="0" value={localTargetAmount} onChange={(e) => setLocalTargetAmount(e.target.value)} onBlur={handleSaveTargets} onKeyDown={e => e.key === 'Enter' && handleSaveTargets()} className="input" placeholder="Ex: 2000000" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-500 uppercase font-semibold">Coordonnées Bancaires (RIB / IBAN)</label>
-                  <textarea rows={3} value={companyConfig.bankingDetails || ''} onChange={(e) => updateCompanyConfig({...companyConfig, bankingDetails: e.target.value})} className="w-full mt-1 bg-slate-900 border border-slate-700 rounded-sm p-2.5 text-sm text-slate-200 focus:outline-emerald-500 font-mono" placeholder="Ex: ECOBANK SENEGAL&#10;IBAN: SN76 0001 0200 3000 4567 8901 23&#10;BIC: ECOSNDAXXX" />
+                  <label className="label !mb-1">Coordonnées Bancaires (RIB / IBAN)</label>
+                  <textarea rows={3} value={companyDraft.bankingDetails} onChange={(e) => setCompanyDraft(prev => ({ ...prev, bankingDetails: e.target.value }))} onBlur={commitCompanyDraft('bankingDetails')} className="input font-mono" placeholder="ECOBANK Guinée — Compte 123 456 789 — BIC: ECOCKGKX" />
                 </div>
               </div>
 
               <div className="flex flex-col gap-6">
-                <div className="bg-slate-800 p-4 rounded-sm border border-slate-700 shadow-inner">
-                  <label className="flex items-center justify-between font-medium text-slate-300 mb-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
+                  <label className="flex items-center justify-between font-medium text-slate-800 mb-4">
                     Signature Autorisée
                   </label>
                 {companyConfig.signatureUrl ? (
@@ -827,7 +819,7 @@ export default function AccountantSales() {
                     <div className="bg-white/5 p-4 rounded-sm flex items-center justify-center h-40 border border-slate-600 border-dashed">
                       <img src={companyConfig.signatureUrl} alt="Signature" className="max-h-full object-contain filter invert opacity-90" />
                     </div>
-                    <button onClick={() => signatureRef.current?.click()} className="w-full text-sm text-slate-900 font-semibold px-4 py-3 bg-white rounded-sm hover:bg-slate-200 transition-colors">Modifier la signature</button>
+                    <button onClick={() => signatureRef.current?.click()} className="btn btn-ghost w-full">Modifier la signature</button>
                   </div>
                 ) : (
                   <button onClick={() => signatureRef.current?.click()} className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-sm hover:border-blue-500 hover:bg-slate-700/50 transition-colors group">
@@ -838,8 +830,8 @@ export default function AccountantSales() {
                 <input type="file" accept="image/*" ref={signatureRef} className="hidden" onChange={(e) => handleFileUpload(e, 'signatureUrl')} />
               </div>
 
-              <div className="bg-slate-800 p-4 rounded-sm border border-slate-700 shadow-inner">
-                <label className="flex items-center justify-between font-medium text-slate-300 mb-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
+                <label className="flex items-center justify-between font-medium text-slate-800 mb-4">
                   Cachet de l'Entreprise
                 </label>
                 {companyConfig.stampUrl ? (
@@ -847,7 +839,7 @@ export default function AccountantSales() {
                     <div className="bg-white/5 p-4 rounded-sm flex items-center justify-center h-40 border border-slate-600 border-dashed">
                       <img src={companyConfig.stampUrl} alt="Cachet" className="max-h-full object-contain filter invert opacity-90" />
                     </div>
-                    <button onClick={() => stampRef.current?.click()} className="w-full text-sm text-slate-900 font-semibold px-4 py-3 bg-white rounded-sm hover:bg-slate-200 transition-colors">Modifier le cachet</button>
+                    <button onClick={() => stampRef.current?.click()} className="btn btn-ghost w-full">Modifier le cachet</button>
                   </div>
                 ) : (
                   <button onClick={() => stampRef.current?.click()} className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-sm hover:border-blue-500 hover:bg-slate-700/50 transition-colors group">
@@ -890,13 +882,13 @@ export default function AccountantSales() {
         <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filteredProjects.length === 0 ? (
             <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-500 bg-white rounded-sm border border-slate-200 border-dashed">
-              <Calculator size={48} className="text-slate-300 mb-4" />
+              <Calculator size={48} className="text-slate-800 mb-4" />
               <p className="text-lg font-medium">Aucun projet trouvé</p>
               <p className="text-sm">Modifiez vos filtres ou attendez de nouveaux projets.</p>
             </div>
           ) : (
             filteredProjects.map(p => {
-            const hasCommercial = true;
+            const hasCommercial = !!p.commercialPaymentConfirm;
             const hasProforma = p.documents?.some(d => d.type === 'PROFORMA');
             const isPaid = p.paymentStatus === 'PAID';
             const price = p.budget || 0;
@@ -1193,7 +1185,6 @@ export default function AccountantSales() {
                    <div key={e.id} className="flex items-center justify-between p-3 rounded-sm border border-slate-100 hover:bg-slate-50 group">
                       <div className="flex flex-col">
                         <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                           {e.category === 'SALAIRE' ? 'ð‘”' : e.category === 'LOYER' ? 'ð¢' : e.category === 'ELECTRICITE' ? 'â¡' : e.category === 'INTERNET' ? 'ð' : 'ð§¾'} 
                            {e.description}
                         </span>
                         <span className="text-[10px] text-slate-400 font-medium font-mono">{new Date(e.date).toLocaleDateString('fr-FR')} • {e.category}</span>

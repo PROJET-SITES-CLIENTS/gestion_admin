@@ -33,7 +33,7 @@ export const SectionCard = ({ title, icon: Icon, children }: any) => {
   return (
     <div className="bg-white border border-slate-200 rounded-sm overflow-hidden shadow-xs flex flex-col h-full print:border-slate-300 print:shadow-none print:break-inside-avoid">
       <div className="px-5 py-3 border-b border-slate-200 bg-slate-50/50 flex items-center gap-3 print:bg-white print:border-slate-300">
-        <Icon size={16} className="text-indigo-650 shrink-0" />
+        <Icon size={16} className="text-indigo-600 shrink-0" />
         <h3 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">{title}</h3>
       </div>
       <div className="px-5 py-3 flex-1 flex flex-col">

@@ -10,6 +10,7 @@ import AssistantView from './views/AssistantView';
 import AuthView from './views/AuthView';
 import { ErrorBoundary } from 'react-error-boundary';
 import { motion } from 'motion/react';
+import { SkeletonPage } from './components/ui';
 import { RotateCcw } from 'lucide-react';
 
 function GlobalErrorFallback({ error, resetErrorBoundary }: any) {
@@ -81,7 +82,7 @@ function ModulePlaceholder({ title, hint, agro = false }: { title: string; hint:
 }
 
 function AppContent() {
-  const { currentRole, currentUser, activeMenu } = useApp();
+  const { currentRole, currentUser, activeMenu, isReady } = useApp();
 
   if (!currentUser) {
     return <AuthView />;
@@ -91,6 +92,9 @@ function AppContent() {
   const transitionKey = `${currentRole}-${activeMenu}`;
 
   const renderContent = () => {
+    // Squelette global pendant le premier chargement des données
+    // (fini les empty-states qui clignotent avant l'arrivée des données).
+    if (!isReady) return <SkeletonPage />;
     switch (activeMenu) {
       case 'MESSAGERIE': return <InternalMessenger />;
       case 'TASKS': return <TaskBoard />;

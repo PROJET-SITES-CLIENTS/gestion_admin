@@ -251,7 +251,7 @@ export default function RhView() {
                     </td>
                   </tr>
                 ))}
-                {employees.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-500">Aucun employé enregistré.</td></tr>}
+                {employees.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-slate-500">Aucun employé enregistré.</td></tr>}
               </tbody>
             </table>
           </div>

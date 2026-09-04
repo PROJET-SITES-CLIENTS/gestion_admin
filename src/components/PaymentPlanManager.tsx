@@ -6,7 +6,7 @@ import { generateReceiptPDF } from '../utils/pdfGenerator';
 
 export const PaymentPlanManager = ({ project }: { project: Project }) => {
   const { savePaymentPlan, payInstallmentAndGenerateReceipt, generateDocument, companyConfig } = useApp();
-  const price = project.commercialInfo?.negotiatedPrice || 0;
+  const price = project.commercialInfo?.negotiatedPrice || project.budget || 0; // fallback budget (audit : plans à 0 GNF)
   
   const [draftPlan, setDraftPlan] = useState<PaymentPlan>(() => {
     if (project.paymentPlan) return project.paymentPlan;

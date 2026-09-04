@@ -7,14 +7,13 @@ import { ClipboardCheck } from 'lucide-react';
 export const BtpQhseView = () => {
   const {
     btpIncidents, btpChantiers, createBtpIncident, updateBtpIncidentStatus, updateBtpChantier, currentRole,
-    btpInspections, createBtpInspection, updateBtpInspection,
-  } = useApp();
+    btpInspections, createBtpInspection, updateBtpInspection, pushToast } = useApp();
   const [newIncident, setNewIncident] = useState({ chantier_id: '', gravite: 'mineur' as BtpIncidentGravite, description: '', mesures_correctives: '' });
   const [newInsp, setNewInsp] = useState({ chantier_id: '', type: 'inspection' as 'inspection' | 'audit' | 'visite', date: new Date().toISOString().slice(0, 10), constats: '', actions_correctives: '', gravite: 'mineure' as 'mineure' | 'majeure' | 'critique' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newIncident.chantier_id) return alert("Veuillez sélectionner un chantier.");
+    if (!newIncident.chantier_id) return pushToast('Veuillez sélectionner un chantier.', 'INFO');
     
     if (newIncident.gravite === 'critique') {
       const confirm = window.confirm("ATTENTION : Déclarer un incident critique va suspendre immédiatement le chantier et alerter le DG. Continuer ?");
@@ -24,7 +23,7 @@ export const BtpQhseView = () => {
     try {
       await createBtpIncident(newIncident);
       setNewIncident({ chantier_id: '', gravite: 'mineur', description: '', mesures_correctives: '' });
-      alert("Incident enregistré.");
+      pushToast('Incident enregistré.', 'INFO');
     } catch (err: any) {
       alert("Erreur: " + err.message);
     }
@@ -44,9 +43,9 @@ export const BtpQhseView = () => {
       // Check if both are unlocked
       if ((roleType === 'QHSE' || chantier.qhse_unlock) && (roleType === 'DG' || chantier.dg_unlock)) {
          // Should realistically trigger a state change to en_cours
-         alert("Double validation effectuée. Le chantier peut reprendre.");
+         pushToast('Double validation effectuée. Le chantier peut reprendre.', 'INFO');
       } else {
-         alert("Validation enregistrée. En attente de la seconde validation.");
+         pushToast('Validation enregistrée. En attente de la seconde validation.', 'INFO');
       }
     } catch(e) {}
   };

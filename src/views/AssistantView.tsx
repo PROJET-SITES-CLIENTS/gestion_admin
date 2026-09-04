@@ -39,6 +39,8 @@ export default function AssistantView() {
   const [catalog] = useState<ServiceCatalogItem[]>(defaultCatalog);
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [clientName, setClientName] = useState('');
+  // Référence stable du devis (audit : Math.random à chaque re-render)
+  const [devisRef] = useState(() => `DEV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`);
 
   const events = agendaEvents;
   const getEventsForDate = (date: string) => events.filter(e => e.date === date).sort((a, b) => a.time.localeCompare(b.time));
@@ -499,7 +501,7 @@ export default function AssistantView() {
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-1">
                         <h4 className="font-semibold text-slate-900 text-sm">{item.name}</h4>
-                        <span className="font-bold text-blue-600 text-sm whitespace-nowrap">{item.basePrice.toLocaleString()} €</span>
+                        <span className="font-bold text-blue-600 text-sm whitespace-nowrap">{item.basePrice.toLocaleString('fr-FR')} GNF</span>
                       </div>
                       <p className="text-xs text-slate-500">{item.description}</p>
                       <span className="inline-block mt-2 text-[10px] uppercase font-bold text-slate-400 tracking-wider bg-slate-100 px-1.5 py-0.5 rounded-sm">{item.category}</span>
@@ -528,12 +530,12 @@ export default function AssistantView() {
                   <div className="border-b-2 border-slate-900 pb-6 mb-8 flex justify-between items-end">
                     <div>
                       <h1 className="text-3xl font-bold tracking-tight text-slate-900">DEVIS</h1>
-                      <p className="text-slate-500 mt-1">Réf : DEV-{new Date().getFullYear()}-{Math.floor(Math.random() * 1000).toString().padStart(3, '0')}</p>
+                      <p className="text-slate-500 mt-1">Réf : {devisRef}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold">{companyConfig?.name || 'Nom de l\'entreprise'}</p>
-                      <p className="text-sm text-slate-600">{companyConfig?.address || 'Adresse'}</p>
-                      <p className="text-sm text-slate-600">{companyConfig?.email || 'email@entreprise.com'}</p>
+                      <p className="font-bold">{companyConfig?.companyName || 'Nom de l\'entreprise'}</p>
+                      <p className="text-sm text-slate-600">{companyConfig?.companyAddress || 'Adresse'}</p>
+                      <p className="text-sm text-slate-600">{companyConfig?.companyEmail || 'email@entreprise.com'}</p>
                     </div>
                   </div>
 
@@ -565,7 +567,7 @@ export default function AssistantView() {
                                 <div className="font-semibold">{item.name}</div>
                                 <div className="text-sm text-slate-500">{item.description}</div>
                               </td>
-                              <td className="py-4 text-right font-medium">{item.basePrice.toLocaleString()} €</td>
+                              <td className="py-4 text-right font-medium">{item.basePrice.toLocaleString('fr-FR')} GNF</td>
                             </tr>
                           );
                         })
@@ -578,13 +580,13 @@ export default function AssistantView() {
                       <div className="flex justify-between p-3 border-b border-slate-100">
                         <span className="text-slate-600">Total HT</span>
                         <span className="font-semibold">
-                          {selectedServices.reduce((sum, id) => sum + (catalog.find(c => c.id === id)?.basePrice || 0), 0).toLocaleString()} €
+                          {selectedServices.reduce((sum, id) => sum + (catalog.find(c => c.id === id)?.basePrice || 0), 0).toLocaleString('fr-FR')} GNF
                         </span>
                       </div>
                       <div className="flex justify-between p-3 bg-slate-900 text-white font-bold">
-                        <span>Total TTC (20%)</span>
+                        <span>Total TTC (TVA 18%)</span>
                         <span>
-                          {(selectedServices.reduce((sum, id) => sum + (catalog.find(c => c.id === id)?.basePrice || 0), 0) * 1.2).toLocaleString()} €
+                          {(selectedServices.reduce((sum, id) => sum + (catalog.find(c => c.id === id)?.basePrice || 0), 0) * 1.2).toLocaleString('fr-FR')} GNF
                         </span>
                       </div>
                     </div>

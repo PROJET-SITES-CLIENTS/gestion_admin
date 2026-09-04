@@ -1,19 +1,25 @@
-import pdfMake from 'pdfmake/build/pdfmake';
-import pdfFonts from 'pdfmake/build/vfs_fonts';
 import { Project, CompanyConfig } from '../types';
 
-// Bind Virtual File System
-(pdfMake as any).vfs = pdfFonts && (pdfFonts as any).pdfMake
-  ? (pdfFonts as any).pdfMake.vfs
-  : (globalThis as any).pdfMake?.vfs;
-
-(pdfMake as any).fonts = {
-  Roboto: {
-    normal: 'Roboto-Regular.ttf',
-    bold: 'Roboto-Medium.ttf',
-    italics: 'Roboto-Italic.ttf',
-    bolditalics: 'Roboto-MediumItalic.ttf'
-  }
+// CODE-SPLITTING : pdfmake (~600 KB) chargé à la première génération
+let pdfMake: any = null;
+const ensurePdfMake = async () => {
+  if (pdfMake) return pdfMake;
+  const [pm, pf] = await Promise.all([
+    import('pdfmake/build/pdfmake'),
+    import('pdfmake/build/vfs_fonts'),
+  ]);
+  pdfMake = (pm as any).default || pm;
+  const fonts = (pf as any).default || pf;
+  pdfMake.vfs = fonts && fonts.pdfMake ? fonts.pdfMake.vfs : (globalThis as any).pdfMake?.vfs;
+  pdfMake.fonts = {
+    Roboto: {
+      normal: 'Roboto-Regular.ttf',
+      bold: 'Roboto-Medium.ttf',
+      italics: 'Roboto-Italic.ttf',
+      bolditalics: 'Roboto-MediumItalic.ttf',
+    },
+  };
+  return pdfMake;
 };
 
 const COLORS = {
@@ -194,7 +200,7 @@ const generateEditorialCover = (typeMain: string, typeSub: string, clientName: s
   };
 };
 
-export const generateProformaPDF = (project: Project, companyConfig: CompanyConfig) => {
+export const generateProformaPDF = async (project: Project, companyConfig: CompanyConfig) => {
   const { totalAmount } = calculateProjectFinancials(project);
   
   const clientName = cleanText(project.name || 'CLIENT');
@@ -333,10 +339,10 @@ export const generateProformaPDF = (project: Project, companyConfig: CompanyConf
   };
 
   const filename = `Proforma_${cleanText(project.name).replace(/\s+/g, '_')}_${project.id.slice(0, 6)}.pdf`;
-  pdfMake.createPdf(docDefinition).download(filename);
+  ensurePdfMake().then(m => m.createPdf(docDefinition)).then(d => d.download(filename));
 };
 
-export const generateReceiptPDF = (project: Project, doc: any, companyConfig: CompanyConfig) => {
+export const generateReceiptPDF = async (project: Project, doc: any, companyConfig: CompanyConfig) => {
   const amountPaid = doc.amountPaid || 0;
   const { totalAmount, totalPaid, totalRemaining } = calculateProjectFinancials(project, doc.installmentId, amountPaid);
 
@@ -480,14 +486,14 @@ export const generateReceiptPDF = (project: Project, doc: any, companyConfig: Co
   };
 
   const filename = `Recu_${cleanText(project.name).replace(/\s+/g, '_')}_${doc.id.slice(0, 6)}.pdf`;
-  pdfMake.createPdf(docDefinition).download(filename);
+  ensurePdfMake().then(m => m.createPdf(docDefinition)).then(d => d.download(filename));
 };
 
 /**
  * Génère le PDF d'un projet (facture proforma) sous forme de Blob.
  * Utilisé par l'archive ZIP (zipGenerator) et tout export programmatique.
  */
-export const getProjectPDFBlob = (project: Project, companyConfig: CompanyConfig): Promise<Blob> => {
+export const getProjectPDFBlob = async (project: Project, companyConfig: CompanyConfig): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     try {
       const { totalAmount } = calculateProjectFinancials(project);
@@ -514,7 +520,7 @@ export const getProjectPDFBlob = (project: Project, companyConfig: CompanyConfig
         defaultStyle: { font: 'Roboto' }
       };
 
-      (pdfMake.createPdf(docDefinition) as any).getBlob((blob: Blob) => resolve(blob));
+      ensurePdfMake().then(m => (m.createPdf(docDefinition) as any).getBlob((blob: Blob) => resolve(blob)));
     } catch (err) {
       reject(err);
     }
@@ -528,7 +534,7 @@ import { BtpChantier as _BtpChantier, CompanyConfig as _CC } from '../types';
 
 const formatGNF2 = (n: number) => `${(n || 0).toLocaleString('fr-FR')} GNF`;
 
-export const generateOsPDF = (chantier: _BtpChantier, os: { id: string; type: string; date: string; motif?: string }, companyConfig: _CC) => {
+export const generateOsPDF = async (chantier: _BtpChantier, os: { id: string; type: string; date: string; motif?: string }, companyConfig: _CC) => {
   const docDefinition: any = {
     pageSize: 'A4',
     pageMargins: [60, 80, 60, 80],
@@ -564,10 +570,10 @@ export const generateOsPDF = (chantier: _BtpChantier, os: { id: string; type: st
     ],
     defaultStyle: { font: 'Roboto' },
   };
-  pdfMake.createPdf(docDefinition).download(`OS_${os.type}_${chantier.nom.replace(/\s+/g, '_')}.pdf`);
+  ensurePdfMake().then(m => m.createPdf(docDefinition)).then(d => d.download(`OS_${os.type}_${chantier.nom.replace(/\s+/g, '_')}.pdf`));
 };
 
-export const generatePvPDF = (chantier: _BtpChantier, type: 'provisoire' | 'définitive', companyConfig: _CC, avancecmtPct = 100) => {
+export const generatePvPDF = async (chantier: _BtpChantier, type: 'provisoire' | 'définitive', companyConfig: _CC, avancecmtPct = 100) => {
   const today = new Date().toISOString();
   const docDefinition: any = {
     pageSize: 'A4',
@@ -603,5 +609,5 @@ export const generatePvPDF = (chantier: _BtpChantier, type: 'provisoire' | 'déf
     ],
     defaultStyle: { font: 'Roboto' },
   };
-  pdfMake.createPdf(docDefinition).download(`PV_reception_${type}_${chantier.nom.replace(/\s+/g, '_')}.pdf`);
+  ensurePdfMake().then(m => m.createPdf(docDefinition)).then(d => d.download(`PV_reception_${type}_${chantier.nom.replace(/\s+/g, '_')}.pdf`));
 };

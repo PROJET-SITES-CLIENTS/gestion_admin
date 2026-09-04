@@ -68,7 +68,7 @@ interface AppContextType {
   treasuryAccounts: TreasuryAccount[];
   transactions: Transaction[];
   addTreasuryAccount: (acc: Omit<TreasuryAccount, 'id' | 'balance'>) => Promise<void>;
-  addTransaction: (tx: Omit<Transaction, 'id' | 'date'>) => Promise<void>;
+  addTransaction: (tx: Omit<Transaction, 'id' | 'date'>) => Promise<boolean>;
   // Communication & Tasks
   tasks: any[];
   notifications: any[];
@@ -365,12 +365,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Anti re-renders : si le polling 15 s renvoie des données IDENTIQUES,
+  // on ne redistribue rien (les 30 setStates sont sautés) — les saisies en
+  // cours dans les formulaires ne sautent plus et l'app ne clignote pas.
+  const prevDataJsonRef = useRef<string | null>(null);
+
   const fetchData = async () => {
     if (!currentUser) return;
     try {
       const res = await apiFetch('/data');
       if (res.ok) {
         const data = await res.json();
+
+        // Données inchangées → aucune redistribution (anti-clignotement).
+        const dataJson = JSON.stringify(data);
+        if (dataJson === prevDataJsonRef.current) {
+          setIsReady(true);
+          return;
+        }
+        prevDataJsonRef.current = dataJson;
+
         const rawProjects = data.projects || [];
         const sanitizedProjects = rawProjects.map((p: Project) => ({
           ...p,
@@ -1022,7 +1036,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { reportError(err, 'Opération'); }
   };
 
-  const addTransaction = async (tx: Omit<Transaction, 'id' | 'date'>) => {
+  const addTransaction = async (tx: Omit<Transaction, 'id' | 'date'>): Promise<boolean> => {
     try {
       const res = await apiFetch('/accounting/transactions', {
         method: 'POST',
@@ -1031,8 +1045,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const newTx = await res.json();
         setTransactions(prev => [...prev, newTx]);
-        
-        // Update local balance
+
+        // Update local balance (le serveur a déjà appliqué le sien)
         setTreasuryAccounts(prev => prev.map(acc => {
           if (acc.id === tx.accountId) {
             return {
@@ -1042,8 +1056,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return acc;
         }));
+        return true;
       }
-    } catch (err) { reportError(err, 'Opération'); }
+      pushToast(await readApiError(res, 'Transaction refusée'), 'ERROR');
+      return false;
+    } catch (err) { reportError(err, 'Opération'); return false; }
   };
 
   // --- COMMUNICATION & TASKS ---

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../store';
 
 export const BtpEnginsView = () => {
-  const { btpEngins, btpChantiers, assignBtpEngin, updateBtpEnginStatus, currentRole } = useApp();
+  const { btpEngins, btpChantiers, assignBtpEngin, updateBtpEnginStatus, currentRole, pushToast } = useApp();
   const [selectedEngin, setSelectedEngin] = useState<string | null>(null);
   const [targetChantier, setTargetChantier] = useState<string>('');
 
@@ -13,7 +13,7 @@ export const BtpEnginsView = () => {
       await assignBtpEngin(selectedEngin, targetChantier || undefined);
       setSelectedEngin(null);
       setTargetChantier('');
-      alert("Affectation mise à jour !");
+      pushToast('Affectation mise à jour !', 'SUCCESS');
     } catch (err: any) {
       alert(err.message || "Erreur lors de l'affectation.");
     }
@@ -81,8 +81,12 @@ export const BtpEnginsView = () => {
                           Affecter
                         </button>
                         {e.statut !== 'hors_service' && (
-                          <button 
-                            onClick={() => updateBtpEnginStatus(e.id, 'hors_service')} 
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Mettre l'engin ${e.identifiant_interne} HORS SERVICE ?`)) {
+                                updateBtpEnginStatus(e.id, 'hors_service');
+                              }
+                            }}
                             className="text-red-600 hover:text-red-800 text-xs font-medium"
                           >
                             Déclarer HS

@@ -346,14 +346,14 @@ export const BtpChantiersView = () => {
                     <div>
                       <label className="label">Retenue de garantie (%)</label>
                       <input type="number" min={0} max={50} className="input !py-1.5"
-                        value={retenuePct}
-                        onChange={e => updateBtpChantier(selectedChantier.id, { retenue_garantie_pct: Number(e.target.value) })} />
+                        defaultValue={retenuePct} key={`rg-${selectedChantier.id}-${retenuePct}`}
+                        onBlur={e => { const v = Number(e.target.value); if (v !== retenuePct) updateBtpChantier(selectedChantier.id, { retenue_garantie_pct: v }); }} />
                     </div>
                     <div>
                       <label className="label">Pénalité de retard (GNF/jour)</label>
                       <input type="number" min={0} className="input !py-1.5"
-                        value={selectedChantier.penalite_journaliere ?? 0}
-                        onChange={e => updateBtpChantier(selectedChantier.id, { penalite_journaliere: Number(e.target.value) })} />
+                        defaultValue={selectedChantier.penalite_journaliere ?? 0} key={`pj-${selectedChantier.id}-${selectedChantier.penalite_journaliere ?? 0}`}
+                        onBlur={e => { const v = Number(e.target.value); if (v !== (selectedChantier.penalite_journaliere ?? 0)) updateBtpChantier(selectedChantier.id, { penalite_journaliere: v }); }} />
                     </div>
                   </div>
                 )}

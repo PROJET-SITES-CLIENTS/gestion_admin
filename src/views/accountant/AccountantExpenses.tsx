@@ -38,10 +38,8 @@ export function AccountantExpenses() {
   };
 
   const markPaid = async (expense: Expense, accountId: string) => {
-    await updateExpenseStatus(expense.id, 'PAID');
-
-    // Create transaction (fallback format legacy sans TVA)
-    addTransaction({
+    // Transaction D'ABORD : si elle échoue, la dépense n'est pas marquée PAYÉE
+    const ok = await addTransaction({
       accountId,
       type: 'DEBIT',
       amount: expense.amountTTC || expense.amount || 0,
@@ -49,6 +47,7 @@ export function AccountantExpenses() {
       category: expense.category,
       description: `Paiement Charge: ${expense.description}`
     });
+    if (ok) await updateExpenseStatus(expense.id, 'PAID');
   };
 
   return (
@@ -181,7 +180,11 @@ export function AccountantExpenses() {
                       <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-sm text-xs font-semibold mb-1">À PAYER</span>
                       <div className="flex items-center gap-1">
                         <select onChange={(e) => {
-                          if (e.target.value) markPaid(exp, e.target.value);
+                          if (e.target.value && window.confirm(`Payer ${(exp.amountTTC ?? exp.amount ?? 0).toLocaleString('fr-FR')} GNF via « ${treasuryAccounts.find(a => a.id === e.target.value)?.name} » ?`)) {
+                            markPaid(exp, e.target.value);
+                          } else {
+                            e.target.value = '';
+                          }
                         }} className="text-[10px] border-slate-300 rounded-sm py-1 pr-6" defaultValue="">
                           <option value="" disabled>Payer avec...</option>
                           {treasuryAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}

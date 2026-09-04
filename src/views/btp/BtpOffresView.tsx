@@ -300,12 +300,14 @@ export const BtpOffresView = () => {
                     
                     <div className="mb-3">
                       <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Montant Estimé (GNF)</label>
-                      <input 
-                        type="number" 
-                        value={o.montant_estime}
-                        onChange={(e) => handleMontantChange(o.id, Number(e.target.value))}
+                      <input
+                        type="number"
+                        defaultValue={o.montant_estime}
+                        key={`montant-${o.id}-${o.montant_estime}`}
+                        onBlur={(e) => { const v = Number(e.target.value); if (v !== o.montant_estime) handleMontantChange(o.id, v); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                         disabled={isLocked || (currentRole !== 'ETUDES' && currentRole !== 'GERANT')}
-                        className={`w-full text-sm font-medium border p-2 rounded ${isLocked ? 'bg-slate-100 text-slate-500' : 'bg-white focus:ring-1 focus:border-blue-500'}`}
+                        className={`input ${isLocked ? 'opacity-60' : ''}`}
                       />
                     </div>
                     

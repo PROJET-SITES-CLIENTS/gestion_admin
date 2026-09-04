@@ -432,36 +432,36 @@ export default function ManagerView() {
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">SMIG (GNF)</label>
                 <input 
                   type="number" 
-                  value={companyConfig.rhSmig || 440000} 
-                  onChange={e => updateCompanyConfig({ rhSmig: Number(e.target.value) })}
+                  defaultValue={companyConfig.rhSmig || 440000} key={`smig-${companyConfig.rhSmig}`}
+                  onBlur={e => { const v = Number(e.target.value); if (v !== (companyConfig.rhSmig || 440000)) updateCompanyConfig({ rhSmig: v }); }}
                   className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" 
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Taux CNSS Employé (%)</label>
-                <input 
+                <input
                   type="number" step="0.1"
-                  value={companyConfig.rhCnssEmployeeRate || 5} 
-                  onChange={e => updateCompanyConfig({ rhCnssEmployeeRate: Number(e.target.value) })}
-                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" 
+                  defaultValue={companyConfig.rhCnssEmployeeRate || 5} key={`cnssE-${companyConfig.rhCnssEmployeeRate}`}
+                  onBlur={e => { const v = Number(e.target.value); if (v !== (companyConfig.rhCnssEmployeeRate || 5)) updateCompanyConfig({ rhCnssEmployeeRate: v }); }}
+                  className="input"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Taux CNSS Patronal (%)</label>
-                <input 
+                <input
                   type="number" step="0.1"
-                  value={companyConfig.rhCnssEmployerRate || 13} 
-                  onChange={e => updateCompanyConfig({ rhCnssEmployerRate: Number(e.target.value) })}
-                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" 
+                  defaultValue={companyConfig.rhCnssEmployerRate || 13} key={`cnssP-${companyConfig.rhCnssEmployerRate}`}
+                  onBlur={e => { const v = Number(e.target.value); if (v !== (companyConfig.rhCnssEmployerRate || 13)) updateCompanyConfig({ rhCnssEmployerRate: v }); }}
+                  className="input"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Abattement RTS (%)</label>
-                <input 
+                <input
                   type="number" step="0.1"
-                  value={companyConfig.rhRtsAbattement || 20} 
-                  onChange={e => updateCompanyConfig({ rhRtsAbattement: Number(e.target.value) })}
-                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" 
+                  defaultValue={companyConfig.rhRtsAbattement || 20} key={`rts-${companyConfig.rhRtsAbattement}`}
+                  onBlur={e => { const v = Number(e.target.value); if (v !== (companyConfig.rhRtsAbattement || 20)) updateCompanyConfig({ rhRtsAbattement: v }); }}
+                  className="input"
                 />
               </div>
             </div>

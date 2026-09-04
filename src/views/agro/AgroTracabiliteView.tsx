@@ -3,7 +3,7 @@ import { useApp } from '../../store';
 import { Network, Search, AlertTriangle, FileText, ShoppingCart } from 'lucide-react';
 
 export function AgroTracabiliteView() {
-  const { currentUser, currentRole, agroCommandes, agroLotProductions, agroLotMatierePremieres, agroLignesLivrees, agroFiches, agroReclamations, agroCreateCommande, agroUpdateCommandeStatus, agroPrepareLivraison, agroCreateReclamation } = useApp();
+  const { currentUser, currentRole, agroCommandes, agroLotProductions, agroLotMatierePremieres, agroLignesLivrees, agroFiches, agroReclamations, agroCreateCommande, agroUpdateCommandeStatus, agroPrepareLivraison, agroCreateReclamation, pushToast } = useApp();
   
   const [searchLot, setSearchLot] = useState('');
   const [tracabilityResult, setTracabilityResult] = useState<any>(null);
@@ -252,7 +252,7 @@ export function AgroTracabiliteView() {
                             <button onClick={() => {
                               const fiche = agroFiches.find(f => f.commande_id === cmd.id);
                               if(fiche) alert(`Fiche: ${fiche.id}\nLots finis: ${fiche.lots_produits_finis.join(', ')}\nMP d'origine: ${fiche.lots_matiere_premiere_origine.join(', ')}`);
-                              else alert("Fiche non trouvée.");
+                              else pushToast('Fiche non trouvée.', 'INFO');
                             }} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs hover:bg-emerald-200 flex items-center gap-1">
                               <FileText className="w-3 h-3"/> Voir Fiche
                             </button>

@@ -1,15 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../store';
-import { Send, Paperclip, Check, CheckCheck, UserCircle, Users, Briefcase, FileText } from 'lucide-react';
+import { Send, Paperclip, Check, CheckCheck, UserCircle, Users, Briefcase, FileText, Menu } from 'lucide-react';
 import { Role } from '../types';
+import { openSecureFile } from '../utils/secureFile';
 
 export default function InternalMessenger() {
-  const { currentUser, internalMessages, sendMessage, markAsRead } = useApp();
+  const { currentUser, internalMessages, sendMessage, markAsRead, pushToast } = useApp();
   const [selectedChannel, setSelectedChannel] = useState<Role | 'ALL'>('ALL');
   const [messageText, setMessageText] = useState('');
+  const [pendingFile, setPendingFile] = useState<{ name: string; url: string } | null>(null);
+  const [mobileChannelsOpen, setMobileChannelsOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const markedRef = useRef<Set<string>>(new Set());
 
-  // Channels to select from
   const channels: { id: Role | 'ALL', label: string, icon: React.ReactNode }[] = [
     { id: 'ALL', label: 'Général', icon: <Users size={16} /> },
     { id: 'GERANT', label: 'Direction', icon: <Briefcase size={16} /> },
@@ -19,84 +23,126 @@ export default function InternalMessenger() {
     { id: 'ASSISTANTE', label: 'Assistante', icon: <Briefcase size={16} /> },
   ];
 
-  // Filter messages based on channel
-  const filteredMessages = (internalMessages || []).filter(msg => {
-    if (selectedChannel === 'ALL') {
-      return msg.receiverRole === 'ALL';
-    }
-    return (
-      (msg.receiverRole === selectedChannel && msg.senderId === currentUser?.id) ||
-      (msg.receiverRole === currentUser?.role && msg.senderRole === selectedChannel) ||
-      (msg.receiverRole === selectedChannel && msg.senderRole === currentUser?.role) ||
-      (msg.receiverRole === selectedChannel && currentUser?.role === selectedChannel)
-    );
-  }).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  // Messages du canal courant (mémoïsé pour éviter les effets en boucle)
+  const filteredMessages = useMemo(() => {
+    return (internalMessages || []).filter(msg => {
+      if (selectedChannel === 'ALL') {
+        return msg.receiverRole === 'ALL';
+      }
+      return (
+        (msg.receiverRole === selectedChannel && msg.senderId === currentUser?.id) ||
+        (msg.receiverRole === currentUser?.role && msg.senderRole === selectedChannel) ||
+        (msg.receiverRole === selectedChannel && msg.senderRole === currentUser?.role) ||
+        (msg.receiverRole === selectedChannel && currentUser?.role === selectedChannel)
+      );
+    }).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [internalMessages, selectedChannel, currentUser?.id, currentUser?.role]);
 
-  // Mark as read when opening a channel
+  // Marquer comme lus UNE SEULE FOIS par message (audit : boucle de re-render)
   useEffect(() => {
-    filteredMessages.forEach(msg => {
-      if (!msg.isRead && msg.senderId !== currentUser?.id) {
+    for (const msg of filteredMessages) {
+      if (!msg.isRead && msg.senderId !== currentUser?.id && !markedRef.current.has(msg.id)) {
+        markedRef.current.add(msg.id);
         markAsRead(msg.id);
       }
-    });
-    // Scroll to bottom
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [filteredMessages, currentUser?.id, markAsRead]);
 
+  // Scroll vers le bas quand le canal change ou qu'un message arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [filteredMessages.length, selectedChannel]);
+
   const handleSend = () => {
-    if (!messageText.trim()) return;
-    sendMessage(selectedChannel, messageText);
+    if (!messageText.trim() && !pendingFile) return;
+    sendMessage(selectedChannel, messageText || pendingFile!.name, pendingFile || undefined);
     setMessageText('');
+    setPendingFile(null);
   };
 
+  // Upload d'une pièce jointe (paperclip fonctionnel — audit : bouton factice)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const stored = localStorage.getItem('coord_user');
+      const res = await fetch('/api/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(stored ? { Authorization: `Bearer ${JSON.parse(stored).token}` } : {}) },
+        body: JSON.stringify({ filename: file.name, base64 }),
+      });
+      if (res.ok) {
+        const up = await res.json();
+        setPendingFile({ name: file.name, url: up.url });
+      } else {
+        pushToast('Upload impossible.', 'ERROR');
+      }
+    } catch {
+      pushToast('Upload impossible (fichier trop volumineux ?).', 'ERROR');
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const currentChannel = channels.find(c => c.id === selectedChannel);
+
   return (
-    <div className="flex h-[calc(100vh-80px)] lg:h-[800px] bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden">
-      {/* Sidebar Channels */}
-      <div className="w-64 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 hidden md:flex">
-        <div className="p-4 border-b border-slate-200">
-          <h2 className="font-semibold text-slate-800">Messagerie Interne</h2>
+    <div className="flex h-[calc(100vh-120px)] lg:h-[800px] card overflow-hidden !p-0">
+      {/* Sidebar Canaux — desktop + drawer mobile */}
+      <div className={`w-64 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 fixed inset-y-0 left-0 z-40 md:static md:z-auto transition-transform duration-300 ${mobileChannelsOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800">Canaux</h2>
+          <button onClick={() => setMobileChannelsOpen(false)} className="md:hidden text-slate-400 hover:text-slate-700" aria-label="Fermer les canaux">✕</button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {channels.map(channel => {
-            // Count unread for this channel
-            const unreadCount = (internalMessages || []).filter(m => 
-              !m.isRead && 
-              m.senderId !== currentUser?.id && 
-              ((channel.id === 'ALL' && m.receiverRole === 'ALL') || 
+            const unreadCount = (internalMessages || []).filter(m =>
+              !m.isRead && m.senderId !== currentUser?.id &&
+              ((channel.id === 'ALL' && m.receiverRole === 'ALL') ||
                (channel.id !== 'ALL' && m.senderRole === channel.id && m.receiverRole === currentUser?.role))
             ).length;
-
             return (
               <button
                 key={channel.id}
-                onClick={() => setSelectedChannel(channel.id)}
-                className={`w-full flex items-center justify-between p-3 rounded-sm transition-colors ${selectedChannel === channel.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-200'}`}
+                onClick={() => { setSelectedChannel(channel.id); setMobileChannelsOpen(false); }}
+                className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${selectedChannel === channel.id ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-200'}`}
               >
                 <div className="flex items-center gap-3">
                   {channel.icon}
                   <span className="text-sm">{channel.label}</span>
                 </div>
                 {unreadCount > 0 && (
-                  <span className="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    {unreadCount}
-                  </span>
+                  <span className="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>
                 )}
               </button>
-            )
+            );
           })}
         </div>
       </div>
 
-      {/* Chat Area */}
+      {/* Overlay mobile */}
+      {mobileChannelsOpen && (
+        <div className="fixed inset-0 z-30 bg-slate-950/50 md:hidden" onClick={() => setMobileChannelsOpen(false)} />
+      )}
+
+      {/* Zone de chat */}
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
         <div className="p-4 border-b border-slate-200 bg-white flex items-center gap-3 shrink-0">
+          <button onClick={() => setMobileChannelsOpen(true)} className="md:hidden h-9 w-9 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500" aria-label="Changer de canal">
+            <Menu size={16} />
+          </button>
           <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
-            {channels.find(c => c.id === selectedChannel)?.icon}
+            {currentChannel?.icon}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">{channels.find(c => c.id === selectedChannel)?.label}</h3>
+            <h3 className="font-semibold text-slate-800">{currentChannel?.label}</h3>
             <p className="text-xs text-slate-500">
-              {selectedChannel === 'ALL' ? 'Discussion générale de l\'entreprise' : `Canal sécurisé avec ${channels.find(c => c.id === selectedChannel)?.label}`}
+              {selectedChannel === 'ALL' ? 'Discussion générale de l\'entreprise' : `Canal sécurisé avec ${currentChannel?.label}`}
             </p>
           </div>
         </div>
@@ -120,22 +166,21 @@ export default function InternalMessenger() {
                       </div>
                     )}
                     <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
-                    
-                    {msg.attachment && (
-                      <div className={`mt-2 p-2 rounded flex items-center gap-2 text-xs ${isMine ? 'bg-indigo-700/50' : 'bg-slate-100'}`}>
+
+                    {msg.attachment?.url && (
+                      <button
+                        onClick={() => openSecureFile(msg.attachment!.url!)}
+                        className={`mt-2 p-2 rounded flex items-center gap-2 text-xs w-full ${isMine ? 'bg-indigo-700/50 hover:bg-indigo-700/70' : 'bg-slate-100 hover:bg-slate-200'} transition-colors`}
+                      >
                         <Paperclip size={14} />
-                        <span className="font-semibold truncate flex-1">{msg.attachment.name}</span>
-                        <button className="px-2 py-1 bg-white text-indigo-600 rounded shadow-sm font-semibold hover:bg-slate-50 transition-colors">
-                          Ouvrir
-                        </button>
-                      </div>
+                        <span className="font-semibold truncate flex-1 text-left">{msg.attachment.name}</span>
+                        <span className="px-2 py-1 bg-white text-indigo-600 rounded font-semibold">Ouvrir</span>
+                      </button>
                     )}
-                    
+
                     <div className={`text-[10px] text-right mt-1.5 flex justify-end items-center gap-1 ${isMine ? 'text-indigo-200' : 'text-slate-400'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {isMine && (
-                        msg.isRead ? <CheckCheck size={12} className="text-indigo-200" /> : <Check size={12} />
-                      )}
+                      {new Date(msg.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      {isMine && (msg.isRead ? <CheckCheck size={12} className="text-indigo-200" /> : <Check size={12} />)}
                     </div>
                   </div>
                 </div>
@@ -145,12 +190,26 @@ export default function InternalMessenger() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Saisie */}
         <div className="p-4 bg-white border-t border-slate-200 flex items-end gap-2 shrink-0">
-          <button className="p-3 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm transition-colors" title="Joindre un fichier (Devis, Facture, etc.)">
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.zip,.txt" />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className={`p-3 rounded-lg transition-colors ${pendingFile ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+            title="Joindre un fichier"
+            aria-label="Joindre un fichier"
+          >
             <Paperclip size={20} />
           </button>
-          <div className="flex-1 bg-slate-50 border border-slate-200 rounded-sm overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
-            <textarea 
+          {pendingFile && (
+            <span className="flex items-center gap-1.5 text-[11.5px] bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg px-2.5 py-1.5 max-w-[180px]">
+              <Paperclip size={11} className="shrink-0" />
+              <span className="truncate">{pendingFile.name}</span>
+              <button onClick={() => setPendingFile(null)} className="text-indigo-400 hover:text-rose-500 shrink-0" aria-label="Retirer la pièce jointe">✕</button>
+            </span>
+          )}
+          <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100">
+            <textarea
               rows={1}
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
@@ -160,17 +219,18 @@ export default function InternalMessenger() {
                   handleSend();
                 }
               }}
-              placeholder="Écrivez votre message... (Entrée pour envoyer)"
+              placeholder="Écrivez votre message… (Entrée pour envoyer)"
               className="w-full bg-transparent border-0 p-3 text-sm focus:ring-0 resize-none max-h-32"
               style={{ minHeight: '44px' }}
             />
           </div>
-          <button 
+          <button
             onClick={handleSend}
-            disabled={!messageText.trim()}
-            className="p-3 bg-indigo-600 text-white rounded-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            disabled={!messageText.trim() && !pendingFile}
+            className="btn btn-primary !p-3"
+            aria-label="Envoyer"
           >
-            <Send size={20} />
+            <Send size={18} />
           </button>
         </div>
       </div>

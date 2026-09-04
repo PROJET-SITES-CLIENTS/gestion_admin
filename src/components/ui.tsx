@@ -201,3 +201,123 @@ export const Progress: React.FC<{ value: number; tone?: string }> = ({ value, to
 export const Skeleton: React.FC<{ className?: string }> = ({ className = 'h-4 w-full' }) => (
   <div className={`shimmer ${className}`} />
 );
+
+/* ---------- Squelette de page (chargement initial) ---------- */
+export const SkeletonPage: React.FC = () => (
+  <div className="space-y-6 animate-[fade-up_.4s_ease-out]">
+    <div className="flex items-end justify-between gap-4">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-3.5 w-96 max-w-full" />
+      </div>
+      <Skeleton className="h-9 w-32 !rounded-lg" />
+    </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} className="card p-5 space-y-3">
+          <Skeleton className="h-2.5 w-24" />
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-2 w-20" />
+        </div>
+      ))}
+    </div>
+    <div className="card p-6 space-y-3">
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <Skeleton key={i} className="h-9 w-full" />
+      ))}
+    </div>
+  </div>
+);
+
+/* ============================================================
+   DIALOGUES STANDARD — remplacent window.confirm / prompt
+   ============================================================ */
+
+/** Confirmation (actions sensibles : paiement, suppression…). */
+export const ConfirmDialog: React.FC<{
+  open: boolean;
+  title: string;
+  message: React.ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}> = ({ open, title, message, confirmLabel = 'Confirmer', danger = false, onConfirm, onClose }) => {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-[3px]"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-pop animate-[fade-up_.25s_cubic-bezier(.22,1,.36,1)] overflow-hidden">
+        <div className="px-6 py-5">
+          <div className={`mb-4 h-11 w-11 rounded-xl flex items-center justify-center border ${danger ? 'bg-rose-50 border-rose-200/70 text-rose-500' : 'bg-indigo-50 border-indigo-200/70 text-indigo-600'}`}>
+            <span className="font-serif italic text-lg leading-none">{danger ? '!' : '?'}</span>
+          </div>
+          <h3 className="text-[15px] font-bold text-slate-900">{title}</h3>
+          <div className="text-[13px] text-slate-500 mt-1.5 leading-relaxed">{message}</div>
+        </div>
+        <div className="px-6 py-4 bg-slate-50/70 border-t border-slate-100 flex justify-end gap-2">
+          <button onClick={onClose} className="btn btn-ghost">Annuler</button>
+          <button
+            onClick={() => { onConfirm(); onClose(); }}
+            className={`btn ${danger ? '!bg-rose-600 !border-rose-700 hover:!bg-rose-700' : 'btn-primary'}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Saisie guidée (remplace window.prompt). */
+export const PromptDialog: React.FC<{
+  open: boolean;
+  title: string;
+  label: string;
+  placeholder?: string;
+  type?: 'text' | 'number';
+  initialValue?: string | number;
+  required?: boolean;
+  submitLabel?: string;
+  onSubmit: (value: string) => void;
+  onClose: () => void;
+}> = ({ open, title, label, placeholder, type = 'text', initialValue = '', required = false, submitLabel = 'Valider', onSubmit, onClose }) => {
+  const [value, setValue] = React.useState(String(initialValue));
+  React.useEffect(() => { if (open) setValue(String(initialValue)); }, [open, initialValue]);
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-[3px]"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-pop animate-[fade-up_.25s_cubic-bezier(.22,1,.36,1)] overflow-hidden">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (required && !value.trim()) return;
+            onSubmit(value);
+            onClose();
+          }}
+          className="px-6 py-5"
+        >
+          <h3 className="text-[15px] font-bold text-slate-900 mb-4">{title}</h3>
+          <label className="label">{label}{required && ' *'}</label>
+          <input
+            autoFocus
+            type={type}
+            className="input"
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="btn btn-ghost">Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={required && !value.trim()}>{submitLabel}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

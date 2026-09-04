@@ -164,6 +164,19 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  /* Fermeture du centre de notifications au clic extérieur */
+  const notifRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showNotifs) return;
+    const onDown = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifs(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showNotifs]);
+
   const go = (menu: string) => { setActiveMenu(menu); setMobileOpen(false); setShowNotifs(false); };
 
   /* ---- Navigation (clés identiques à App.tsx) ---- */
@@ -442,7 +455,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </span>
 
           {/* Notifications */}
-          <div className="relative">
+          <div className="relative" ref={notifRef}>
             <button
               onClick={() => setShowNotifs(!showNotifs)}
               className="relative h-9 w-9 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
