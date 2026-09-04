@@ -63,8 +63,8 @@ const db = {
 
   async delete(collection: string, id: string): Promise<boolean> {
     const sql = getSql();
-    const result = await sql`DELETE FROM documents WHERE collection = ${collection} AND id = ${id}`;
-    return result.count > 0;
+    const result: any = await sql`DELETE FROM documents WHERE collection = ${collection} AND id = ${id}`;
+    return Array.isArray(result) ? result.length > 0 : (result?.count ?? 0) > 0;
   },
 
   async getAllData(): Promise<Record<string, any[]>> {
@@ -98,8 +98,8 @@ const db = {
 
   async deleteUser(id: string): Promise<boolean> {
     const sql = getSql();
-    const result = await sql`DELETE FROM users WHERE id = ${id}`;
-    return result.count > 0;
+    const result: any = await sql`DELETE FROM users WHERE id = ${id}`;
+    return Array.isArray(result) ? result.length > 0 : (result?.count ?? 0) > 0;
   },
 };
 
