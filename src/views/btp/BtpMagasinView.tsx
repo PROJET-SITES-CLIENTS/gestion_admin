@@ -10,10 +10,12 @@ export const BtpMagasinView = () => {
   const {
     currentRole, btpArticles, btpBonCommandes, btpMouvements, btpChantiers,
     createBtpArticle, createBtpBonCommande, soumettreBtpBonCommande, recevoirBtpBonCommande,
-    createBtpMouvement,
+    createBtpMouvement, btpFournisseurs, createBtpFournisseur,
   } = useApp();
 
   const [tab, setTab] = useState<Tab>('STOCK');
+  const [showFournisseur, setShowFournisseur] = useState(false);
+  const [newFournisseur, setNewFournisseur] = useState({ nom: '', telephone: '', specialite: '' });
   const canManage = ['RESP_MATERIEL', 'MAGASINIER_BTP', 'GERANT'].includes(currentRole || '');
   const canBC = canManage || ['COND_TRAVAUX', 'CHEF_CHANTIER'].includes(currentRole || '');
 
@@ -52,7 +54,7 @@ export const BtpMagasinView = () => {
   const [bcPick, setBcPick] = useState('');
 
   const [showMvt, setShowMvt] = useState(false);
-  const [newMvt, setNewMvt] = useState({ article_id: '', type: 'sortie_chantier' as 'entree' | 'sortie_chantier' | 'retour', quantite: 0, chantier_id: '', motif: '' });
+  const [newMvt, setNewMvt] = useState({ article_id: '', type: 'sortie_chantier' as 'entree' | 'sortie_chantier' | 'retour', quantite: 0, chantier_id: '', motif: '', cout_unitaire: 0 });
 
   const bcTotal = bcLignes.reduce((a, l) => a + l.quantite * l.pu, 0);
 
@@ -74,11 +76,14 @@ export const BtpMagasinView = () => {
   const handleCreateMvt = async () => {
     if (!newMvt.article_id || newMvt.quantite <= 0) return;
     if (newMvt.type !== 'entree' && !newMvt.chantier_id) return;
+    // Valorisation auto depuis le PU catalogue (éditable) pour l'imputation chantier.
+    const art = btpArticles.find(a => a.id === newMvt.article_id);
     await createBtpMouvement({
       ...newMvt,
+      cout_unitaire: newMvt.type === 'sortie_chantier' ? (newMvt.cout_unitaire || art?.pu || 0) : undefined,
       chantier_id: newMvt.type === 'entree' ? '' : newMvt.chantier_id,
-    });
-    setNewMvt({ article_id: '', type: 'sortie_chantier', quantite: 0, chantier_id: '', motif: '' });
+    } as any);
+    setNewMvt({ article_id: '', type: 'sortie_chantier', quantite: 0, chantier_id: '', motif: '', cout_unitaire: 0 });
     setShowMvt(false);
   };
 
@@ -96,6 +101,7 @@ export const BtpMagasinView = () => {
         subtitle="Catalogue, stock dépôt/chantier, bons de commande — la réception crée automatiquement la dépense comptable."
         actions={canManage && (
           <>
+            <button onClick={() => setShowFournisseur(true)} className="btn btn-ghost"><Plus size={14} /> Fournisseur</button>
             <button onClick={() => setShowMvt(true)} className="btn btn-ghost"><ArrowLeftRight size={14} /> Mouvement</button>
             <button onClick={() => setShowArticle(true)} className="btn btn-ghost"><Plus size={14} /> Article</button>
           </>
@@ -274,7 +280,17 @@ export const BtpMagasinView = () => {
                 {btpChantiers.filter(c => c.statut !== 'clôturé').map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </select>
             </div>
-            <div><label className="label">Fournisseur</label><input className="input" value={newBC.fournisseur} onChange={e => setNewBC({ ...newBC, fournisseur: e.target.value })} placeholder="SOGUIPRA…" /></div>
+            <div>
+              <label className="label">Fournisseur</label>
+              <select className="input" value={newBC.fournisseur} onChange={e => setNewBC({ ...newBC, fournisseur: e.target.value })}>
+                <option value="">— Choisir / saisir —</option>
+                {btpFournisseurs.map(f => <option key={f.id} value={f.nom}>{f.nom}{f.specialite ? ` (${f.specialite})` : ''}</option>)}
+                <option value="__saisir">✏️ Saisir un nouveau nom…</option>
+              </select>
+              {newBC.fournisseur === '__saisir' && (
+                <input className="input mt-2" placeholder="Nom du fournisseur" onChange={e => setNewBC({ ...newBC, fournisseur: e.target.value })} />
+              )}
+            </div>
             <div><label className="label">Date souhaitée</label><input type="date" className="input" value={newBC.date_souhaitee} onChange={e => setNewBC({ ...newBC, date_souhaitee: e.target.value })} /></div>
           </div>
 
@@ -322,6 +338,26 @@ export const BtpMagasinView = () => {
         </div>
       </Modal>
 
+      <Modal open={showFournisseur} onClose={() => setShowFournisseur(false)} title="Nouveau fournisseur" subtitle="Répertoire des fournisseurs BTP">
+        <div className="space-y-3">
+          <div><label className="label">Nom</label><input className="input" value={newFournisseur.nom} onChange={e => setNewFournisseur({ ...newFournisseur, nom: e.target.value })} placeholder="SOGUIPRA…" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Téléphone</label><input className="input" value={newFournisseur.telephone} onChange={e => setNewFournisseur({ ...newFournisseur, telephone: e.target.value })} /></div>
+            <div><label className="label">Spécialité</label><input className="input" value={newFournisseur.specialite} onChange={e => setNewFournisseur({ ...newFournisseur, specialite: e.target.value })} placeholder="Ciment, ferraillage…" /></div>
+          </div>
+          <button
+            onClick={async () => {
+              if (!newFournisseur.nom.trim()) return;
+              await createBtpFournisseur(newFournisseur);
+              setNewFournisseur({ nom: '', telephone: '', specialite: '' });
+              setShowFournisseur(false);
+            }}
+            disabled={!newFournisseur.nom.trim()}
+            className="btn btn-primary w-full"
+          >Enregistrer</button>
+        </div>
+      </Modal>
+
       <Modal open={showMvt} onClose={() => setShowMvt(false)} title="Nouveau mouvement de stock" subtitle="Sortie vers un chantier ou retour au dépôt">
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -353,6 +389,18 @@ export const BtpMagasinView = () => {
               </div>
             )}
           </div>
+          {newMvt.type === 'sortie_chantier' && (
+            <div>
+              <label className="label">Valorisation unitaire (imputation chantier, GNF)</label>
+              <input
+                type="number" min={0} className="input"
+                placeholder={String(btpArticles.find(a => a.id === newMvt.article_id)?.pu ?? 0)}
+                value={newMvt.cout_unitaire || ''}
+                onChange={e => setNewMvt({ ...newMvt, cout_unitaire: Number(e.target.value) })}
+              />
+              <p className="text-[10.5px] text-slate-400 mt-1">Vide = prix catalogue. × quantité imputé au P&L du chantier.</p>
+            </div>
+          )}
           <div><label className="label">Motif</label><input className="input" value={newMvt.motif} onChange={e => setNewMvt({ ...newMvt, motif: e.target.value })} placeholder="Dalle R+2, fondations…" /></div>
           <button onClick={handleCreateMvt} disabled={!newMvt.article_id || newMvt.quantite <= 0 || (newMvt.type !== 'entree' && !newMvt.chantier_id)} className="btn btn-primary w-full">Enregistrer le mouvement</button>
         </div>

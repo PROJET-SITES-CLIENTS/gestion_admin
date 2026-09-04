@@ -63,6 +63,8 @@ class CrudController {
                 'budget_initial' => ['float'], 'conducteur_travaux_id' => ['text', 64],
                 'chef_chantier_id' => ['text', 64],
                 'budget_detail' => ['array'],
+                'retenue_garantie_pct' => ['float'],
+                'penalite_journaliere' => ['float'],
                 'rh_validation' => ['bool'], 'materiel_validation' => ['bool'],
                 'qhse_unlock' => ['bool'], 'dg_unlock' => ['bool'],
                 'statut' => ['enum', ['planification', 'en_cours', 'suspendu', 'réception_provisoire', 'réception_définitive', 'clôturé']],
@@ -73,6 +75,7 @@ class CrudController {
             'fields' => [
                 'type' => ['text', 100], 'identifiant_interne' => ['text', 50],
                 'chantier_affecte_id' => ['text', 64], 'compteur_horaire' => ['float'],
+                'taux_horaire' => ['float'],
                 'date_derniere_maintenance' => ['date'], 'date_prochaine_maintenance_prevue' => ['date'],
                 'statut' => ['enum', ['disponible', 'affecté', 'en_maintenance', 'hors_service']],
             ],
@@ -104,6 +107,8 @@ class CrudController {
             'fields' => [
                 'chantier_id' => ['text', 64], 'periode' => ['text', 50],
                 'pct_avancement_declare' => ['float'], 'montant_facture' => ['float'],
+                'montant_ht' => ['float'], 'tva_amount' => ['float'],
+                'retenue_amount' => ['float'], 'retenue_liberee' => ['bool'],
                 'valide_par_conducteur' => ['bool'],
                 'statut' => ['enum', ['brouillon', 'en_attente_facturation', 'facturée']],
             ],
@@ -163,6 +168,7 @@ class CrudController {
                 'article_id' => ['text', 64],
                 'type' => ['enum', ['entree', 'sortie_chantier', 'retour']],
                 'quantite' => ['float'],
+                'cout_unitaire' => ['float'],
                 'chantier_id' => ['text', 64], // '' = dépôt central
                 'bc_id' => ['text', 64], 'motif' => ['text', 300],
             ],
@@ -178,6 +184,100 @@ class CrudController {
                 'type' => ['enum', ['plan', 'pv_reception', 'attestation', 'contrat', 'photo', 'autre']],
                 'nom' => ['text', 200], 'url' => ['text', 300],
                 'description' => ['multiline', 2000],
+            ],
+        ],
+
+        // ---------- EXTENSION BTP — Vague 2 : avenants, OS, sous-traitance ----------
+        'btpAvenants' => [
+            'idKey' => 'id', 'idPrefix' => 'ATS',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'ETUDES', 'COMPTABLE', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'brouillon'],
+            'userField' => 'created_by',
+            'fields' => [
+                'chantier_id' => ['text', 64],
+                'type' => ['enum', ['montant', 'delai', 'montant_delai', 'penalite']],
+                'objet' => ['text', 300],
+                'montant' => ['float'],        // delta (peut être négatif / pénalité)
+                'jours_delai' => ['int'],
+                'date' => ['date'],
+                'statut' => ['enum', ['brouillon', 'validé', 'rejeté']],
+            ],
+        ],
+        'btpOs' => [
+            'idKey' => 'id', 'idPrefix' => 'OS',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'DEVELOPPEUR'],
+            'userField' => 'created_by',
+            'fields' => [
+                'chantier_id' => ['text', 64],
+                'type' => ['enum', ['démarrage', 'arrêt', 'reprise', 'réception']],
+                'date' => ['date'],
+                'motif' => ['text', 500],
+            ],
+        ],
+        'btpSousTraitances' => [
+            'idKey' => 'id', 'idPrefix' => 'ST',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'COMPTABLE', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'en_cours'],
+            'userField' => 'created_by',
+            'fields' => [
+                'chantier_id' => ['text', 64], 'entreprise' => ['text', 200],
+                'objet' => ['text', 300], 'montant' => ['float'],
+                'date_debut' => ['date'], 'date_fin_prevue' => ['date'],
+                'statut' => ['enum', ['en_cours', 'soldée', 'résiliée']],
+            ],
+        ],
+        'btpFournisseurs' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'RESP_MATERIEL', 'MAGASINIER_BTP', 'COMPTABLE', 'DEVELOPPEUR'],
+            'fields' => [
+                'nom' => ['text', 200], 'telephone' => ['text', 40],
+                'email' => ['text', 190], 'adresse' => ['text', 300],
+                'nif' => ['text', 50], 'specialite' => ['text', 200],
+            ],
+        ],
+        'btpCautionnements' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COMPTABLE', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'active'],
+            'fields' => [
+                'chantier_id' => ['text', 64],
+                'type' => ['enum', ['soumission', 'bonne_execution', 'decennale', 'avance']],
+                'assureur_banque' => ['text', 200], 'montant' => ['float'],
+                'date_debut' => ['date'], 'date_fin' => ['date'],
+                'statut' => ['enum', ['active', 'libérée', 'apurée']],
+            ],
+        ],
+        'btpInspections' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'QHSE_BTP', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'planifiée'],
+            'userField' => 'inspecteur_id',
+            'fields' => [
+                'chantier_id' => ['text', 64], 'date' => ['date'],
+                'type' => ['enum', ['inspection', 'audit', 'visite']],
+                'constats' => ['multiline', 5000],
+                'actions_correctives' => ['multiline', 5000],
+                'gravite' => ['enum', ['mineure', 'majeure', 'critique']],
+                'statut' => ['enum', ['planifiée', 'réalisée', 'clôturée']],
+            ],
+        ],
+        'btpPrixUnitaires' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'ETUDES', 'COMPTABLE', 'DEVELOPPEUR'],
+            'fields' => [
+                'designation' => ['text', 200], 'unite' => ['text', 20],
+                'pu' => ['float'],
+                'famille' => ['enum', ['MATERIAUX', 'MAIN_OEUVRE', 'MATERIEL', 'SOUS_TRAITANCE', 'FRAIS_GENERAUX']],
+                'source' => ['enum', ['manuel', 'achat']],
+            ],
+        ],
+        'btpHeuresEngins' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'RESP_MATERIEL', 'DEVELOPPEUR'],
+            'userField' => 'created_by',
+            'fields' => [
+                'engin_id' => ['text', 64], 'chantier_id' => ['text', 64],
+                'date' => ['date'], 'heures' => ['float'],
             ],
         ],
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Project, User, Role, CompanyConfig, Expense, ProjectStatus, AuthResponse, Prospect, TreasuryAccount, Transaction, BtpOffre, BtpChantier, BtpJournalChantier, BtpIncidentQHSE, BtpEngin, BtpSituationTravaux, BtpOffreStatus, BtpChantierStatus, BtpEnginStatus, BtpAffectation, BtpPointage, BtpArticle, BtpBonCommande, BtpMouvement, BtpDocument, BtpChantierStat, BtpEmployeeDirectoryEntry, LotMatierePremiere, AgroMatierePremiereStatus, LotProduction, AgroProductionStatus, ControleQualiteProcess, CommandeClientAgro, AgroCommandeStatus, LigneCommandeLotLivre, FicheTracabilite, ReclamationClient, AgroReclamationStatus, Task, AppNotification, CalendarEvent } from './types';
+import { Project, User, Role, CompanyConfig, Expense, ProjectStatus, AuthResponse, Prospect, TreasuryAccount, Transaction, BtpOffre, BtpChantier, BtpJournalChantier, BtpIncidentQHSE, BtpEngin, BtpSituationTravaux, BtpOffreStatus, BtpChantierStatus, BtpEnginStatus, BtpAffectation, BtpPointage, BtpArticle, BtpBonCommande, BtpMouvement, BtpDocument, BtpChantierStat, BtpEmployeeDirectoryEntry, BtpAvenant, BtpOrdreService, BtpSousTraitance, BtpFournisseur, BtpCautionnement, BtpInspection, BtpPrixUnitaire, BtpHeureEngin, LotMatierePremiere, AgroMatierePremiereStatus, LotProduction, AgroProductionStatus, ControleQualiteProcess, CommandeClientAgro, AgroCommandeStatus, LigneCommandeLotLivre, FicheTracabilite, ReclamationClient, AgroReclamationStatus, Task, AppNotification, CalendarEvent } from './types';
 import { apiFetch, getAuthToken, readApiError } from './apiClient';
 
 export interface Toast {
@@ -130,6 +130,28 @@ interface AppContextType {
   btpDocuments: BtpDocument[];
   addBtpDocument: (doc: Omit<BtpDocument, 'id' | 'created_by'>) => Promise<void>;
 
+  // Extension BTP — Vague 2
+  btpAvenants: BtpAvenant[];
+  createBtpAvenant: (av: Omit<BtpAvenant, 'id' | 'statut' | 'created_by'>) => Promise<void>;
+  validerBtpAvenant: (id: string) => Promise<boolean>;
+  rejeterBtpAvenant: (id: string) => Promise<void>;
+  btpOrdresService: BtpOrdreService[];
+  btpSousTraitances: BtpSousTraitance[];
+  createBtpSousTraitance: (st: Omit<BtpSousTraitance, 'id' | 'statut' | 'created_by'>) => Promise<void>;
+  solderBtpSousTraitance: (id: string) => Promise<void>;
+  btpFournisseurs: BtpFournisseur[];
+  createBtpFournisseur: (f: Omit<BtpFournisseur, 'id'>) => Promise<void>;
+  btpCautionnements: BtpCautionnement[];
+  createBtpCautionnement: (c: Omit<BtpCautionnement, 'id' | 'statut'>) => Promise<void>;
+  libererBtpRetenues: (chantierId: string, accountId: string) => Promise<boolean>;
+  btpInspections: BtpInspection[];
+  createBtpInspection: (i: Omit<BtpInspection, 'id' | 'statut' | 'inspecteur_id'>) => Promise<void>;
+  updateBtpInspection: (id: string, updates: Partial<BtpInspection>) => Promise<void>;
+  btpPrixUnitaires: BtpPrixUnitaire[];
+  createBtpPrixUnitaire: (p: Omit<BtpPrixUnitaire, 'id'>) => Promise<void>;
+  btpHeuresEngins: BtpHeureEngin[];
+  createBtpHeureEngin: (h: Omit<BtpHeureEngin, 'id' | 'created_by'>) => Promise<void>;
+
   // Agro Module
   agroLotMatierePremieres: LotMatierePremiere[];
   agroLotProductions: LotProduction[];
@@ -211,6 +233,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [btpDocuments, setBtpDocuments] = useState<BtpDocument[]>([]);
   const [btpChantierStats, setBtpChantierStats] = useState<BtpChantierStat[]>([]);
   const [btpEmployeeDirectory, setBtpEmployeeDirectory] = useState<BtpEmployeeDirectoryEntry[]>([]);
+
+  // Extension BTP Vague 2
+  const [btpAvenants, setBtpAvenants] = useState<BtpAvenant[]>([]);
+  const [btpOrdresService, setBtpOrdresService] = useState<BtpOrdreService[]>([]);
+  const [btpSousTraitances, setBtpSousTraitances] = useState<BtpSousTraitance[]>([]);
+  const [btpFournisseurs, setBtpFournisseurs] = useState<BtpFournisseur[]>([]);
+  const [btpCautionnements, setBtpCautionnements] = useState<BtpCautionnement[]>([]);
+  const [btpInspections, setBtpInspections] = useState<BtpInspection[]>([]);
+  const [btpPrixUnitaires, setBtpPrixUnitaires] = useState<BtpPrixUnitaire[]>([]);
+  const [btpHeuresEngins, setBtpHeuresEngins] = useState<BtpHeureEngin[]>([]);
 
   // Agro States
   const [agroLotMatierePremieres, setAgroLotMatierePremieres] = useState<LotMatierePremiere[]>([]);
@@ -391,6 +423,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setBtpDocuments(data.btpDocuments || []);
         setBtpChantierStats(data.btpChantierStats || []);
         setBtpEmployeeDirectory(data.btpEmployeeDirectory || []);
+        setBtpAvenants(data.btpAvenants || []);
+        setBtpOrdresService(data.btpOs || []);
+        setBtpSousTraitances(data.btpSousTraitances || []);
+        setBtpFournisseurs(data.btpFournisseurs || []);
+        setBtpCautionnements(data.btpCautionnements || []);
+        setBtpInspections(data.btpInspections || []);
+        setBtpPrixUnitaires(data.btpPrixUnitaires || []);
+        setBtpHeuresEngins(data.btpHeuresEngins || []);
 
         // Agro Data
         setAgroLotMatierePremieres(data.agroLotMatierePremieres || []);
@@ -1079,6 +1119,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const updated = await crudUpdate('btpChantiers', id, { statut: status }, 'Changement statut chantier');
     if (updated) setBtpChantiers(prev => prev.map(c => c.id === id ? updated : c));
+
+    // Ordres de Service automatiques aux transitions officielles.
+    const osType: BtpOrdreService['type'] | null =
+      status === 'en_cours' ? 'démarrage' :
+      status === 'suspendu' ? 'arrêt' :
+      status === 'réception_provisoire' || status === 'réception_définitive' ? 'réception' : null;
+    if (osType) {
+      const os = await crudCreate<BtpOrdreService>('btpOs', {
+        chantier_id: id,
+        type: osType,
+        date: new Date().toISOString(),
+        motif: `Passage automatique en « ${status} »`
+      }, 'Ordre de Service');
+      if (os) setBtpOrdresService(prev => [...prev, os]);
+    }
+
+    // Réception définitive → tâche compta pour libérer les retenues de garantie.
+    if (status === 'réception_définitive') {
+      const st = btpChantierStats.find(s => s.id === id);
+      if (st && st.retenue_bloquee > 0) {
+        await addTask('COMPTABLE', `Libérer les retenues de garantie — ${chantier.nom}`,
+          `Réception définitive prononcée : ${st.retenue_bloquee.toLocaleString('fr-FR')} GNF de retenues sont libérables (Pilotage Chantiers → Situations).`, 'HIGH');
+      }
+    }
   };
 
   const updateBtpChantier = async (id: string, updates: Partial<BtpChantier>) => {
@@ -1142,6 +1206,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateBtpSituation = async (id: string, updates: Partial<BtpSituationTravaux>) => {
     const updated = await crudUpdate('btpSituations', id, updates, 'Situation de travaux');
     if (updated) setBtpSituations(prev => prev.map(s => s.id === id ? updated : s));
+
+    // Tâche automatique : situation mise en attente de facturation → compta.
+    if (updated && updates.statut === 'en_attente_facturation') {
+      const sit = updated;
+      await addTask('COMPTABLE', `Facturer la situation « ${sit.periode} » (${sit.montant_facture.toLocaleString('fr-FR')} GNF)`,
+        `Situation validée par le conducteur : à facturer depuis le pilotage du chantier.`, 'MEDIUM');
+    }
   };
 
   // --- EXTENSION BTP — Phase 1 : facturation atomique situation → trésorerie ---
@@ -1210,6 +1281,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (updated) {
       setBtpBonCommandes(prev => prev.map(b => b.id === id ? updated : b));
       await addNotification('GERANT', `Bon de commande soumis (${updated.total_ht.toLocaleString('fr-FR')} GNF HT — ${updated.fournisseur}) : en attente de réception magasin.`, 'INFO');
+      await addTask('MAGASINIER_BTP', `Réceptionner le BC ${updated.fournisseur} (${updated.total_ht.toLocaleString('fr-FR')} GNF HT)`,
+        `Bon de commande à réceptionner dans Magasin & Achats : la réception crée les entrées de stock et la dépense comptable.`, 'MEDIUM');
     }
   };
 
@@ -1241,6 +1314,105 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addBtpDocument = async (doc: Omit<BtpDocument, 'id' | 'created_by'>) => {
     const created = await crudCreate<BtpDocument>('btpDocuments', doc, 'Document chantier');
     if (created) setBtpDocuments(prev => [...prev, created]);
+  };
+
+  // --- EXTENSION BTP — Vague 2 ---
+  const createBtpAvenant = async (av: Omit<BtpAvenant, 'id' | 'statut' | 'created_by'>) => {
+    const created = await crudCreate<BtpAvenant>('btpAvenants', av, 'Avenant');
+    if (created) {
+      setBtpAvenants(prev => [...prev, created]);
+      await addNotification('GERANT', `Avenant ${created.id} en attente de validation (${av.type.replace('_', ' ')}).`, 'INFO');
+    }
+  };
+
+  const validerBtpAvenant = async (id: string): Promise<boolean> => {
+    try {
+      const res = await apiFetch(`/btp/avenants/${id}/valider`, { method: 'POST', body: JSON.stringify({}) });
+      if (res.ok) {
+        const d = await res.json();
+        setBtpAvenants(prev => prev.map(a => a.id === id ? d.avenant : a));
+        if (d.chantier) setBtpChantiers(prev => prev.map(c => c.id === d.chantier.id ? d.chantier : c));
+        pushToast('Avenant validé : budget et calendrier mis à jour.', 'SUCCESS');
+        return true;
+      }
+      pushToast(await readApiError(res, 'Validation impossible'), 'ERROR');
+      return false;
+    } catch (err) {
+      reportError(err, 'Validation avenant');
+      return false;
+    }
+  };
+
+  const rejeterBtpAvenant = async (id: string) => {
+    const updated = await crudUpdate('btpAvenants', id, { statut: 'rejeté' }, 'Rejet avenant');
+    if (updated) setBtpAvenants(prev => prev.map(a => a.id === id ? updated : a));
+  };
+
+  const createBtpSousTraitance = async (st: Omit<BtpSousTraitance, 'id' | 'statut' | 'created_by'>) => {
+    const created = await crudCreate<BtpSousTraitance>('btpSousTraitances', st, 'Sous-traitance');
+    if (created) setBtpSousTraitances(prev => [...prev, created]);
+  };
+
+  const solderBtpSousTraitance = async (id: string) => {
+    const updated = await crudUpdate('btpSousTraitances', id, { statut: 'soldée' }, 'Solde sous-traitance');
+    if (updated) setBtpSousTraitances(prev => prev.map(s => s.id === id ? updated : s));
+  };
+
+  const createBtpFournisseur = async (f: Omit<BtpFournisseur, 'id'>) => {
+    const created = await crudCreate<BtpFournisseur>('btpFournisseurs', f, 'Fournisseur');
+    if (created) setBtpFournisseurs(prev => [...prev, created]);
+  };
+
+  const createBtpCautionnement = async (c: Omit<BtpCautionnement, 'id' | 'statut'>) => {
+    const created = await crudCreate<BtpCautionnement>('btpCautionnements', c, 'Cautionnement');
+    if (created) setBtpCautionnements(prev => [...prev, created]);
+  };
+
+  const libererBtpRetenues = async (chantierId: string, accountId: string): Promise<boolean> => {
+    try {
+      const res = await apiFetch(`/btp/chantiers/${chantierId}/liberer-retenues`, {
+        method: 'POST',
+        body: JSON.stringify({ accountId })
+      });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.transaction) {
+          setTransactions(prev => [...prev, d.transaction]);
+          setTreasuryAccounts(prev => prev.map(acc =>
+            acc.id === accountId ? { ...acc, balance: acc.balance + d.transaction.amount } : acc
+          ));
+        }
+        // Les situations libérées seront rechargées au prochain fetchData.
+        fetchData();
+        pushToast(`Retenues libérées : ${d.total_liberre.toLocaleString('fr-FR')} GNF encaissés.`, 'SUCCESS');
+        return true;
+      }
+      pushToast(await readApiError(res, 'Libération impossible'), 'ERROR');
+      return false;
+    } catch (err) {
+      reportError(err, 'Libération retenues');
+      return false;
+    }
+  };
+
+  const createBtpInspection = async (i: Omit<BtpInspection, 'id' | 'statut' | 'inspecteur_id'>) => {
+    const created = await crudCreate<BtpInspection>('btpInspections', i, 'Inspection QHSE');
+    if (created) setBtpInspections(prev => [...prev, created]);
+  };
+
+  const updateBtpInspection = async (id: string, updates: Partial<BtpInspection>) => {
+    const updated = await crudUpdate('btpInspections', id, updates, 'Inspection QHSE');
+    if (updated) setBtpInspections(prev => prev.map(i => i.id === id ? updated : i));
+  };
+
+  const createBtpPrixUnitaire = async (p: Omit<BtpPrixUnitaire, 'id'>) => {
+    const created = await crudCreate<BtpPrixUnitaire>('btpPrixUnitaires', p, 'Prix unitaire');
+    if (created) setBtpPrixUnitaires(prev => [...prev, created]);
+  };
+
+  const createBtpHeureEngin = async (h: Omit<BtpHeureEngin, 'id' | 'created_by'>) => {
+    const created = await crudCreate<BtpHeureEngin>('btpHeuresEngins', h, 'Heures engin');
+    if (created) setBtpHeuresEngins(prev => [...prev, created]);
   };
 
   // --- AGRO METHODS (persistées via /api/crud/*) ---
@@ -1547,6 +1719,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createBtpMouvement,
       btpDocuments,
       addBtpDocument,
+      btpAvenants,
+      createBtpAvenant,
+      validerBtpAvenant,
+      rejeterBtpAvenant,
+      btpOrdresService,
+      btpSousTraitances,
+      createBtpSousTraitance,
+      solderBtpSousTraitance,
+      btpFournisseurs,
+      createBtpFournisseur,
+      btpCautionnements,
+      createBtpCautionnement,
+      libererBtpRetenues,
+      btpInspections,
+      createBtpInspection,
+      updateBtpInspection,
+      btpPrixUnitaires,
+      createBtpPrixUnitaire,
+      btpHeuresEngins,
+      createBtpHeureEngin,
       agroLotMatierePremieres,
       agroLotProductions,
       agroControles,
@@ -1570,7 +1762,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pushToast,
       dismissToast
   }), [
-      projects, clients, expenses, currentRole, currentUser, companyConfig, isReady, systemUsers, prospects, activeMenu, internalMessages, employees, contracts, leaveRequests, payslips, treasuryAccounts, transactions, tasks, notifications, btpOffres, btpChantiers, btpEngins, btpIncidents, btpJournaux, btpSituations, btpAffectations, btpPointages, btpArticles, btpBonCommandes, btpMouvements, btpDocuments, btpChantierStats, btpEmployeeDirectory, agroLotMatierePremieres, agroLotProductions, agroControles, agroCommandes, agroLignesLivrees, agroFiches, agroReclamations, agendaEvents, toasts
+      projects, clients, expenses, currentRole, currentUser, companyConfig, isReady, systemUsers, prospects, activeMenu, internalMessages, employees, contracts, leaveRequests, payslips, treasuryAccounts, transactions, tasks, notifications, btpOffres, btpChantiers, btpEngins, btpIncidents, btpJournaux, btpSituations, btpAffectations, btpPointages, btpArticles, btpBonCommandes, btpMouvements, btpDocuments, btpChantierStats, btpEmployeeDirectory, btpAvenants, btpOrdresService, btpSousTraitances, btpFournisseurs, btpCautionnements, btpInspections, btpPrixUnitaires, btpHeuresEngins, agroLotMatierePremieres, agroLotProductions, agroControles, agroCommandes, agroLignesLivrees, agroFiches, agroReclamations, agendaEvents, toasts
   ]);
 
   return (

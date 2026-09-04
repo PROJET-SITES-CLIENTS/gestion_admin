@@ -5,7 +5,7 @@ import { Employee, Contract, LeaveRequest, Payslip } from '../types';
 import { Badge, statusTone } from '../components/ui';
 
 export default function RhView() {
-  const { employees, contracts, leaveRequests, payslips, companyConfig, addEmployee, addLeaveRequest, addPayslip, addContract, updateLeaveRequestStatus, updatePayslipStatus, treasuryAccounts, registerSalaryAdvance, btpChantiers, btpAffectations, updateBtpChantier, addNotification } = useApp();
+  const { employees, contracts, leaveRequests, payslips, companyConfig, addEmployee, addLeaveRequest, addPayslip, addContract, updateLeaveRequestStatus, updatePayslipStatus, treasuryAccounts, registerSalaryAdvance, btpChantiers, btpAffectations, updateBtpChantier, addNotification, btpPointages } = useApp();
   const [activeTab, setActiveTab] = useState('DASHBOARD');
   const [showAddModal, setShowAddModal] = useState(false);
   const [modalType, setModalType] = useState(''); // 'EMPLOYEE', 'CONTRACT', 'LEAVE', 'PAYSLIP'
@@ -80,16 +80,20 @@ export default function RhView() {
     const emp = employees.find(x => x.id === empId);
     if (!emp) return;
 
+    // Heures supplémentaires BTP (Vague 2) : optionnel, pré-calculées depuis les pointages.
+    const overtimeAmount = Number(fd.get('overtimeAmount') || 0);
+
     const base = emp.baseSalary;
-    const calc = calculatePayslip(base);
-    
+    const calc = calculatePayslip(base + overtimeAmount);
+
     const ps = {
       employeeId: empId,
       month: Number(fd.get('month')),
       year: new Date().getFullYear(),
       baseSalary: base,
       bonuses: 0,
-      grossSalary: base,
+      overtimeAmount,
+      grossSalary: base + overtimeAmount,
       cnssEmployeeAmount: calc.employeeCnss,
       cnssEmployerAmount: calc.employerCnss,
       rtsAmount: calc.rtsAmount,
@@ -98,6 +102,15 @@ export default function RhView() {
     addPayslip(ps);
     setShowAddModal(false);
   };
+
+  // Heures pointées sur les chantiers BTP ce mois (pont pointage → paie)
+  const currentMonth = new Date().getMonth() + 1;
+  const heuresBtpMois = employees.map(emp => {
+    const heures = btpPointages
+      .filter(p => p.employee_id === emp.id && new Date(p.date).getMonth() + 1 === currentMonth)
+      .reduce((a, p) => a + p.heures, 0);
+    return { emp, heures, sup: Math.max(0, heures - 173) }; // 173h ≈ mois légal
+  }).filter(x => x.heures > 0);
 
   return (
     <div className="space-y-6 pb-20">
@@ -592,9 +605,26 @@ export default function RhView() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Mois (1-12)</label>
-                      <input name="month" type="number" min="1" max="12" defaultValue={new Date().getMonth() + 1} required className="w-full border border-slate-300 rounded-sm p-2 text-sm outline-none focus:border-indigo-500" />
+                      <input name="month" type="number" min={1} max={12} defaultValue={new Date().getMonth() + 1} required className="w-full border border-slate-300 rounded-sm p-2 text-sm outline-none focus:border-indigo-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Heures sup. (GNF)</label>
+                      <input name="overtimeAmount" type="number" min={0} defaultValue={0} className="w-full border border-slate-300 rounded-sm p-2 text-sm outline-none focus:border-indigo-500" />
                     </div>
                   </div>
+                  {heuresBtpMois.length > 0 && (
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-sm p-3 text-[11.5px] text-indigo-800">
+                      <p className="font-semibold mb-1.5 flex items-center gap-1"><HardHat size={12} /> Heures chantiers BTP ce mois :</p>
+                      <ul className="space-y-0.5">
+                        {heuresBtpMois.map(({ emp, heures, sup }) => (
+                          <li key={emp.id} className="flex justify-between">
+                            <span>{emp.firstName} {emp.lastName}</span>
+                            <span className="font-mono">{Math.round(heures)} h{sup > 0 ? ` · dont ${Math.round(sup)} h sup (≈ ${Math.round(sup * (emp.baseSalary / 208) * 1.2).toLocaleString('fr-FR')} GNF à reporter)` : ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   
                   <div className="bg-blue-50 p-4 border border-blue-100 rounded-sm mt-4">
                     <p className="text-xs text-blue-800 flex items-center gap-1 mb-2"><Calculator size={14}/> <strong>Note de calcul :</strong></p>

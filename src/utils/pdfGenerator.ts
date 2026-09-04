@@ -520,3 +520,88 @@ export const getProjectPDFBlob = (project: Project, companyConfig: CompanyConfig
     }
   });
 };
+
+/* ============================================================
+   EXTENSION BTP — Ordres de Service & PV de réception
+   ============================================================ */
+import { BtpChantier as _BtpChantier, CompanyConfig as _CC } from '../types';
+
+const formatGNF2 = (n: number) => `${(n || 0).toLocaleString('fr-FR')} GNF`;
+
+export const generateOsPDF = (chantier: _BtpChantier, os: { id: string; type: string; date: string; motif?: string }, companyConfig: _CC) => {
+  const docDefinition: any = {
+    pageSize: 'A4',
+    pageMargins: [60, 80, 60, 80],
+    header: getStandardHeader(`ORDRE DE SERVICE — ${os.type.toUpperCase()}`, chantier.nom),
+    footer: getStandardFooter(companyConfig),
+    content: [
+      generateEditorialCover('ORDRE DE', `SERVICE — ${os.type.toUpperCase()}`, chantier.client, os.id.toUpperCase(), os.date, companyConfig),
+      {
+        stack: [
+          { text: 'CHANTIER CONCERNÉ', fontSize: 8, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 8] },
+          { text: `${chantier.nom}\nClient : ${chantier.client}\nAdresse : ${chantier.adresse}`, fontSize: 11, color: COLORS.TEXT_MAIN, lineHeight: 1.5 },
+          { text: `Réf. Ordre de Service : ${os.id}`, fontSize: 10, color: COLORS.TEXT_MUTED, margin: [0, 10, 0, 0] },
+          { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 475, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], margin: [0, 24, 0, 24] },
+          { text: 'OBJET', fontSize: 8, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 8] },
+          { text: `Le maître d'ouvrage notifie par le présent ordre de service la mise en œuvre de la décision suivante : ${os.type}.`, fontSize: 11, color: COLORS.TEXT_MAIN, lineHeight: 1.6 },
+          ...(os.motif ? [{ text: `Motif : ${os.motif}`, fontSize: 10, color: COLORS.TEXT_MUTED, margin: [0, 10, 0, 0] }] : []),
+          { text: `Fait à Conakry, le ${new Date(os.date).toLocaleDateString('fr-FR')}.`, fontSize: 10, color: COLORS.TEXT_MAIN, margin: [0, 30, 0, 0] },
+        ],
+        margin: [0, 20, 0, 40],
+      },
+      {
+        columns: [
+          { width: '50%', stack: [
+            { text: 'LE MAÎTRE D\'OUVRAGE', fontSize: 7, color: COLORS.TEXT_MUTED, characterSpacing: 2, margin: [0, 0, 0, 40] },
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }] },
+          ]},
+          { width: '50%', stack: [
+            { text: 'L\'ENTREPRISE', fontSize: 7, color: COLORS.TEXT_MUTED, characterSpacing: 2, margin: [0, 0, 0, 40], alignment: 'right' },
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], alignment: 'right' },
+          ]},
+        ],
+      },
+    ],
+    defaultStyle: { font: 'Roboto' },
+  };
+  pdfMake.createPdf(docDefinition).download(`OS_${os.type}_${chantier.nom.replace(/\s+/g, '_')}.pdf`);
+};
+
+export const generatePvPDF = (chantier: _BtpChantier, type: 'provisoire' | 'définitive', companyConfig: _CC, avancecmtPct = 100) => {
+  const today = new Date().toISOString();
+  const docDefinition: any = {
+    pageSize: 'A4',
+    pageMargins: [60, 80, 60, 80],
+    header: getStandardHeader(`PV DE RÉCEPTION ${type.toUpperCase()}`, chantier.nom),
+    footer: getStandardFooter(companyConfig),
+    content: [
+      generateEditorialCover('PROCÈS-VERBAL', `RÉCEPTION ${type.toUpperCase()}`, chantier.client, `PV-${type.slice(0, 3).toUpperCase()}-${today.slice(0, 10)}`, today, companyConfig),
+      {
+        stack: [
+          { text: 'TRANCHES CONCERNÉES', fontSize: 8, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 8] },
+          { text: `Chantier : ${chantier.nom}\nClient : ${chantier.client}\nAdresse : ${chantier.adresse}\nMontant du marché : ${formatGNF2(chantier.budget_initial)}`, fontSize: 11, color: COLORS.TEXT_MAIN, lineHeight: 1.6 },
+          { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 475, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], margin: [0, 24, 0, 24] },
+          { text: 'CONSTAT', fontSize: 8, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 8] },
+          { text: `En exécution du marché susvisé, la réception ${type} des travaux est prononcée ce jour. Les travaux ont été menés à leur terme${type === 'définitive' ? ' et l\u2019ensemble des réserves formulées à la réception provisoire est levé' : ''}.`, fontSize: 11, color: COLORS.TEXT_MAIN, lineHeight: 1.6 },
+          { text: `Avancement constaté : ${avancecmtPct}%.`, fontSize: 10, color: COLORS.TEXT_MUTED, margin: [0, 12, 0, 0] },
+          ...(type === 'définitive' ? [{ text: 'La présente réception définitive déclenche la libération des retenues de garantie conformément au marché.', fontSize: 10, color: COLORS.TEXT_MUTED, margin: [0, 12, 0, 0] }] : []),
+        ],
+        margin: [0, 20, 0, 40],
+      },
+      {
+        columns: [
+          { width: '50%', stack: [
+            { text: 'LE MAÎTRE D\'OUVRAGE', fontSize: 7, color: COLORS.TEXT_MUTED, characterSpacing: 2, margin: [0, 0, 0, 40] },
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }] },
+          ]},
+          { width: '50%', stack: [
+            { text: 'L\'ENTREPRISE', fontSize: 7, color: COLORS.TEXT_MUTED, characterSpacing: 2, margin: [0, 0, 0, 40], alignment: 'right' },
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], alignment: 'right' },
+          ]},
+        ],
+      },
+    ],
+    defaultStyle: { font: 'Roboto' },
+  };
+  pdfMake.createPdf(docDefinition).download(`PV_reception_${type}_${chantier.nom.replace(/\s+/g, '_')}.pdf`);
+};

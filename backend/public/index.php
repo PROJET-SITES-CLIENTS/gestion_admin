@@ -141,6 +141,8 @@ $router->post('/api/agro/livraisons', [\App\controllers\AgroController::class, '
 //   - réception d'un bon de commande → stock + dépense noyau + notification
 // ------------------------------------------------------------------
 $router->post('/api/btp/situations/:id/facturer', [\App\controllers\BtpController::class, 'factureSituation']);
+$router->post('/api/btp/avenants/:id/valider', [\App\controllers\BtpController::class, 'validerAvenant']);
+$router->post('/api/btp/chantiers/:id/liberer-retenues', [\App\controllers\BtpController::class, 'libererRetenues']);
 $router->post('/api/btp/bons/:id/recevoir', [\App\controllers\BtpController::class, 'recevoirBonCommande']);
 
 // ------------------------------------------------------------------

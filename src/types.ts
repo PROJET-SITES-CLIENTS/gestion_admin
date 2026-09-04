@@ -424,6 +424,10 @@ export interface BtpChantier {
   dg_unlock?: boolean;
   /** Budget prévisionnel détaillé — transféré du chiffrage de l'offre gagnée. */
   budget_detail?: BtpChiffrage;
+  /** Retenue de garantie (% appliqué à chaque situation). */
+  retenue_garantie_pct?: number;
+  /** Pénalité de retard contractuelle (GNF/jour de retard). */
+  penalite_journaliere?: number;
 }
 
 export interface BtpJournalChantier {
@@ -456,6 +460,8 @@ export interface BtpEngin {
   statut: BtpEnginStatus;
   chantier_affecte_id?: string;
   compteur_horaire: number;
+  /** Taux horaire d'imputation au chantier (GNF/h). */
+  taux_horaire?: number;
   date_derniere_maintenance?: string;
   date_prochaine_maintenance_prevue?: string;
 }
@@ -466,6 +472,10 @@ export interface BtpSituationTravaux {
   periode: string;
   pct_avancement_declare: number;
   montant_facture: number;
+  montant_ht?: number;
+  tva_amount?: number;
+  retenue_amount?: number;
+  retenue_liberee?: boolean;
   valide_par_conducteur?: boolean;
   statut: BtpSituationStatus;
   date_facturation?: string;
@@ -551,6 +561,8 @@ export interface BtpMouvement {
   article_id: string;
   type: BtpMouvementType;
   quantite: number;
+  /** Valorisation unitaire à la sortie (imputation chantier). */
+  cout_unitaire?: number;
   chantier_id?: string;
   bc_id?: string;
   motif?: string;
@@ -578,6 +590,10 @@ export interface BtpChantierStat {
   montant_situations_attente: number;
   cout_mo_reel: number;
   heures_pointees: number;
+  cout_engins: number;
+  cout_stock_sorti: number;
+  cout_sous_traitance: number;
+  retenue_bloquee: number;
 }
 
 /** Annuaire light (sans données personnelles ni salaires). */
@@ -586,6 +602,100 @@ export interface BtpEmployeeDirectoryEntry {
   firstName: string;
   lastName: string;
   position?: string;
+}
+
+// --- EXTENSION BTP — Vague 2 ---
+
+export type BtpAvenantType = 'montant' | 'delai' | 'montant_delai' | 'penalite';
+export type BtpAvenantStatus = 'brouillon' | 'validé' | 'rejeté';
+
+/** Avenant (ATS) : modification contractualisée du marché. */
+export interface BtpAvenant {
+  id: string;
+  chantier_id: string;
+  type: BtpAvenantType;
+  objet: string;
+  /** Delta : positif (hausse), négatif (pénalité/baisse). */
+  montant: number;
+  jours_delai?: number;
+  date: string;
+  statut: BtpAvenantStatus;
+  created_by?: string;
+}
+
+/** Ordre de Service : démarrage / arrêt / reprise / réception. */
+export interface BtpOrdreService {
+  id: string;
+  chantier_id: string;
+  type: 'démarrage' | 'arrêt' | 'reprise' | 'réception';
+  date: string;
+  motif?: string;
+  created_by?: string;
+}
+
+export interface BtpSousTraitance {
+  id: string;
+  chantier_id: string;
+  entreprise: string;
+  objet: string;
+  montant: number;
+  date_debut?: string;
+  date_fin_prevue?: string;
+  statut: 'en_cours' | 'soldée' | 'résiliée';
+  created_by?: string;
+}
+
+export interface BtpFournisseur {
+  id: string;
+  nom: string;
+  telephone?: string;
+  email?: string;
+  adresse?: string;
+  nif?: string;
+  specialite?: string;
+}
+
+export interface BtpCautionnement {
+  id: string;
+  chantier_id: string;
+  type: 'soumission' | 'bonne_execution' | 'decennale' | 'avance';
+  assureur_banque: string;
+  montant: number;
+  date_debut?: string;
+  date_fin?: string;
+  statut: 'active' | 'libérée' | 'apurée';
+}
+
+export interface BtpInspection {
+  id: string;
+  chantier_id: string;
+  date: string;
+  type: 'inspection' | 'audit' | 'visite';
+  constats?: string;
+  actions_correctives?: string;
+  gravite?: 'mineure' | 'majeure' | 'critique';
+  statut: 'planifiée' | 'réalisée' | 'clôturée';
+  inspecteur_id?: string;
+}
+
+/** Bibliothèque de prix unitaires (BPU) réutilisable dans les chiffrages. */
+export interface BtpPrixUnitaire {
+  id: string;
+  designation: string;
+  unite: string;
+  pu: number;
+  famille: BtpChiffrageLigne['famille'];
+  source?: 'manuel' | 'achat';
+}
+
+/** Heures d'engin imputées à un chantier (coût = heures × taux_horaire). */
+export interface BtpHeureEngin {
+  id: string;
+  engin_id: string;
+  chantier_id: string;
+  date: string;
+  heures: number;
+  created_by?: string;
 }
 
 // --- AGROALIMENTAIRE / AGROBUSINESS MODELS ---

@@ -140,6 +140,14 @@ class DataController {
             'btpBonCommandes' => array_values($db->getTable('btpBonCommandes')),
             'btpMouvements' => array_values($db->getTable('btpMouvements')),
             'btpDocuments' => array_values($db->getTable('btpDocuments')),
+            'btpAvenants' => array_values($db->getTable('btpAvenants')),
+            'btpOs' => array_values($db->getTable('btpOs')),
+            'btpSousTraitances' => array_values($db->getTable('btpSousTraitances')),
+            'btpFournisseurs' => array_values($db->getTable('btpFournisseurs')),
+            'btpCautionnements' => array_values($db->getTable('btpCautionnements')),
+            'btpInspections' => array_values($db->getTable('btpInspections')),
+            'btpPrixUnitaires' => array_values($db->getTable('btpPrixUnitaires')),
+            'btpHeuresEngins' => array_values($db->getTable('btpHeuresEngins')),
             // Agrégats financiers par chantier (les dépenses brutes restent
             // réservées GERANT/COMPTABLE — ici seuls les totaux partent).
             'btpChantierStats' => self::computeChantierStats($db),
@@ -172,12 +180,22 @@ class DataController {
         $situations = $db->getTable('btpSituations');
         $pointages = $db->getTable('btpPointages');
         $affectations = $db->getTable('btpAffectations');
+        $mouvements = $db->getTable('btpMouvements');
+        $heuresEngins = $db->getTable('btpHeuresEngins');
+        $engins = $db->getTable('btpEngins');
+        $sousTraitances = $db->getTable('btpSousTraitances');
 
         // Taux journalier par (employé, chantier)
         $taux = [];
         foreach ($affectations as $a) {
             $key = ($a['employee_id'] ?? '') . '|' . ($a['chantier_id'] ?? '');
             $taux[$key] = Sanitizer::float($a['taux_journalier'] ?? 0);
+        }
+
+        // Taux horaire par engin
+        $tauxEngin = [];
+        foreach ($engins as $e) {
+            $tauxEngin[$e['id'] ?? ''] = Sanitizer::float($e['taux_horaire'] ?? 0);
         }
 
         $stats = [];
@@ -190,6 +208,10 @@ class DataController {
                 'montant_situations_attente' => 0.0,
                 'cout_mo_reel' => 0.0,
                 'heures_pointees' => 0.0,
+                'cout_engins' => 0.0,
+                'cout_stock_sorti' => 0.0,
+                'cout_sous_traitance' => 0.0,
+                'retenue_bloquee' => 0.0,
             ];
         }
 
@@ -208,6 +230,9 @@ class DataController {
             $montant = Sanitizer::float($s['montant_facture'] ?? 0);
             if (($s['statut'] ?? '') === 'facturée') {
                 $stats[$cid]['montant_situations_facturees'] += $montant;
+                if (empty($s['retenue_liberee'])) {
+                    $stats[$cid]['retenue_bloquee'] += Sanitizer::float($s['retenue_amount'] ?? 0);
+                }
             } elseif (($s['statut'] ?? '') === 'en_attente_facturation') {
                 $stats[$cid]['montant_situations_attente'] += $montant;
             }
@@ -221,6 +246,30 @@ class DataController {
             $key = ($p['employee_id'] ?? '') . '|' . $cid;
             $tauxJournalier = $taux[$key] ?? 0;
             $stats[$cid]['cout_mo_reel'] += ($heures / 8.0) * $tauxJournalier;
+        }
+
+        // Coût matière réellement consommé (sorties valorisées vers le chantier)
+        foreach ($mouvements as $m) {
+            $cid = $m['chantier_id'] ?? '';
+            if ($cid === '' || !isset($stats[$cid])) continue;
+            if (($m['type'] ?? '') !== 'sortie_chantier') continue;
+            $cu = isset($m['cout_unitaire']) ? Sanitizer::float($m['cout_unitaire']) : 0.0;
+            $stats[$cid]['cout_stock_sorti'] += Sanitizer::float($m['quantite'] ?? 0) * $cu;
+        }
+
+        // Imputation des heures engins (heures × taux horaire de l'engin)
+        foreach ($heuresEngins as $h) {
+            $cid = $h['chantier_id'] ?? '';
+            if (!isset($stats[$cid])) continue;
+            $stats[$cid]['cout_engins'] += Sanitizer::float($h['heures'] ?? 0) * ($tauxEngin[$h['engin_id'] ?? ''] ?? 0);
+        }
+
+        // Sous-traitance non résiliée
+        foreach ($sousTraitances as $st) {
+            $cid = $st['chantier_id'] ?? '';
+            if (!isset($stats[$cid])) continue;
+            if (($st['statut'] ?? '') === 'résiliée') continue;
+            $stats[$cid]['cout_sous_traitance'] += Sanitizer::float($st['montant'] ?? 0);
         }
 
         return array_values($stats);

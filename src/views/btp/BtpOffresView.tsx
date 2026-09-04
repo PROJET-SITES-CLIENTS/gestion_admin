@@ -12,12 +12,13 @@ const FAMILLES: { id: BtpChiffrageLigne['famille'], label: string }[] = [
   { id: 'FRAIS_GENERAUX', label: 'Frais généraux' },
 ];
 
-/** Éditeur de chiffrage structuré (Phase 2 — rôle ETUDES). */
+/** Éditeur de chiffrage structuré (Phase 2 — rôle ETUDES) + BPU (Vague 2). */
 const ChiffrageModal: React.FC<{
   offre: BtpOffre | null;
   onClose: () => void;
   onSave: (payload: { chiffrage_json: string; montant_estime: number; marge_calculee: number }) => void;
 }> = ({ offre, onClose, onSave }) => {
+  const { btpPrixUnitaires, createBtpPrixUnitaire, pushToast } = useApp();
   const existing: BtpChiffrageLigne[] = (() => {
     try { return offre?.chiffrage_json ? (JSON.parse(offre.chiffrage_json).lignes ?? []) : []; }
     catch { return []; }
@@ -29,6 +30,8 @@ const ChiffrageModal: React.FC<{
 
   const [lignes, setLignes] = useState<BtpChiffrageLigne[]>(existing);
   const [margePct, setMargePct] = useState<number>(existingMarge);
+  const [bpuPick, setBpuPick] = useState('');
+  const [familleActive, setFamilleActive] = useState<BtpChiffrageLigne['famille']>('MATERIAUX');
 
   const coutTotal = lignes.reduce((a, l) => a + l.quantite * l.pu, 0);
   const montantVente = coutTotal * (1 + margePct / 100);
@@ -44,8 +47,43 @@ const ChiffrageModal: React.FC<{
   return (
     <Modal open={!!offre} onClose={onClose} title={`Chiffrage — ${offre.objet}`} subtitle={`${offre.client} · le montant de vente alimente automatiquement l'offre`} wide>
       <div className="space-y-4">
-        {/* Ajout de ligne */}
-        <AddChiffrageLine onAdd={(l) => setLignes(prev => [...prev, l])} />
+        {/* Bibliothèque de prix (BPU) */}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="label">Bibliothèque de prix ({btpPrixUnitaires.length})</label>
+            <select
+              className="input"
+              value={bpuPick}
+              onChange={e => {
+                const p = btpPrixUnitaires.find(x => x.id === e.target.value);
+                if (p) {
+                  setLignes(prev => [...prev, { famille: p.famille, designation: p.designation, quantite: 1, pu: p.pu }]);
+                  setBpuPick('');
+                }
+              }}
+            >
+              <option value="">Insérer un prix de référence…</option>
+              {btpPrixUnitaires.map(p => (
+                <option key={p.id} value={p.id}>{p.designation} — {p.pu.toLocaleString('fr-FR')} GNF/{p.unite} ({FAMILLES.find(f => f.id === p.famille)?.label})</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={async () => {
+              const nouvelles = lignes.filter(l => l.designation.trim() && l.pu > 0);
+              for (const l of nouvelles) {
+                await createBtpPrixUnitaire({ designation: l.designation, unite: 'u', pu: l.pu, famille: l.famille, source: 'manuel' });
+              }
+              pushToast(`${nouvelles.length} prix enregistrés dans la bibliothèque.`, 'SUCCESS');
+            }}
+            disabled={lignes.length === 0}
+            className="btn btn-ghost shrink-0"
+            title="Enregistrer les lignes comme prix réutilisables"
+          ><Plus size={13} /> BPU</button>
+        </div>
+
+        {/* Ajout de ligne manuelle */}
+        <AddChiffrageLine familleDefault={familleActive} onFamilleChange={setFamilleActive} onAdd={(l) => setLignes(prev => [...prev, l])} />
 
         {/* Lignes */}
         {lignes.length > 0 && (
@@ -119,17 +157,24 @@ const ChiffrageModal: React.FC<{
   );
 };
 
-const AddChiffrageLine: React.FC<{ onAdd: (l: BtpChiffrageLigne) => void }> = ({ onAdd }) => {
-  const [famille, setFamille] = useState<BtpChiffrageLigne['famille']>('MATERIAUX');
+const AddChiffrageLine: React.FC<{
+  familleDefault: BtpChiffrageLigne['famille'];
+  onFamilleChange: (f: BtpChiffrageLigne['famille']) => void;
+  onAdd: (l: BtpChiffrageLigne) => void;
+}> = ({ familleDefault, onFamilleChange, onAdd }) => {
+  const [famille, setFamille] = useState<BtpChiffrageLigne['famille']>(familleDefault);
   const [designation, setDesignation] = useState('');
   const [quantite, setQuantite] = useState(1);
   const [pu, setPu] = useState(0);
+
+  // Synchronise la famille par défaut si elle change à l'extérieur
+  React.useEffect(() => setFamille(familleDefault), [familleDefault]);
 
   return (
     <div className="grid grid-cols-12 gap-2 items-end">
       <div className="col-span-3">
         <label className="label">Famille</label>
-        <select className="input" value={famille} onChange={e => setFamille(e.target.value as BtpChiffrageLigne['famille'])}>
+        <select className="input" value={famille} onChange={e => { const f = e.target.value as BtpChiffrageLigne['famille']; setFamille(f); onFamilleChange(f); }}>
           {FAMILLES.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
         </select>
       </div>

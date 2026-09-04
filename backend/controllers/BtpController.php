@@ -59,6 +59,16 @@ class BtpController {
                     throw new \RuntimeException('Montant de la situation invalide.');
                 }
 
+                // Ventilation HT / TVA / retenue de garantie (Vague 2).
+                // Retour par défaut : montant TTC, pas de TVA détaillée, pas de retenue.
+                $montantHt = isset($sit['montant_ht']) ? Sanitizer::float($sit['montant_ht']) : $montant;
+                $tva = isset($sit['tva_amount']) ? Sanitizer::float($sit['tva_amount']) : 0.0;
+                $retenue = isset($sit['retenue_amount']) ? Sanitizer::float($sit['retenue_amount']) : 0.0;
+                if ($retenue > $montant) {
+                    throw new \RuntimeException('La retenue de garantie dépasse le montant de la situation.');
+                }
+                $net = $montant - $retenue;
+
                 // 2. Le compte de trésorerie doit exister.
                 $account = null;
                 foreach ($data['treasury_accounts'] ?? [] as $acc) {
@@ -83,17 +93,20 @@ class BtpController {
                 $data['btpSituations'][$sitIdx]['updated_at'] = date('c');
                 $situation = $data['btpSituations'][$sitIdx];
 
-                // 5. Transaction CREDIT + crédit du solde, dans la même transaction.
+                // 5. Transaction CREDIT du NET encaissé (montant − retenue)
+                //    + crédit du solde, dans la même transaction.
                 $transaction = [
                     'id' => Database::generateId(),
                     'accountId' => $accountId,
                     'toAccountId' => null,
                     'type' => 'CREDIT',
-                    'amount' => $montant,
+                    'amount' => $net,
                     'date' => date('c'),
                     'referenceId' => (string) $id,
                     'category' => 'SITUATION_TRAVAUX',
-                    'description' => "Situation {$sit['periode']} — Chantier : {$chantierNom}",
+                    'description' => "Situation {$sit['periode']} — Chantier : {$chantierNom}"
+                        . ($tva > 0 ? " (HT {$montantHt} + TVA {$tva})" : '')
+                        . ($retenue > 0 ? " — retenue garantie {$retenue}" : ''),
                     'isReconciled' => false,
                     'attachmentUrl' => '',
                     'createdBy' => null,
@@ -106,25 +119,206 @@ class BtpController {
 
                 foreach ($data['treasury_accounts'] as &$acc) {
                     if (($acc['id'] ?? '') === $accountId) {
-                        $acc['balance'] = Sanitizer::float($acc['balance'] ?? 0) + $montant;
+                        $acc['balance'] = Sanitizer::float($acc['balance'] ?? 0) + $net;
                         break;
                     }
                 }
                 unset($acc);
 
-                // 6. Notification au Gérant.
+                // 6. Notifications : Gérant + Comptable (tâche de suivi de la retenue).
                 $data['notifications'][] = [
                     'id' => Database::generateId(),
                     'userId' => '',
                     'targetRole' => 'GERANT',
-                    'message' => "Situation facturée : {$montant} GNF encaissés sur « {$chantierNom} » ({$sit['periode']}).",
+                    'message' => "Situation facturée : {$net} GNF encaissés sur « {$chantierNom} » ({$sit['periode']})" . ($retenue > 0 ? " — retenue de garantie bloquée : {$retenue} GNF." : '.'),
                     'type' => 'SUCCESS',
                     'isRead' => false,
                     'link' => '',
                     'createdAt' => date('c'),
                 ];
 
-                $result = ['situation' => $situation, 'transaction' => $transaction, 'chantier_nom' => $chantierNom];
+                $result = [
+                    'situation' => $situation,
+                    'transaction' => $transaction,
+                    'chantier_nom' => $chantierNom,
+                    'retenue' => $retenue,
+                    'net' => $net,
+                ];
+                return $data;
+            });
+        } catch (\RuntimeException $e) {
+            Response::json(['error' => $e->getMessage()], 409);
+        }
+
+        Response::json(['success' => true] + $result, 201);
+    }
+
+    /**
+     * POST /api/btp/avenants/:id/valider
+     * Valide un avenant et l'APPLIQUE atomiquement au chantier :
+     * budget_initial ± montant, date_fin_prevue + jours (avec report du début si nécessaire).
+     */
+    public function validerAvenant(Request $request, $id) {
+        AuthMiddleware::authorize($request, 'GERANT');
+
+        $db = Database::getInstance();
+        $result = null;
+
+        try {
+            $db->transaction(static function ($data) use ($id, &$result) {
+                $avIdx = null;
+                foreach ($data['btpAvenants'] ?? [] as $i => $av) {
+                    if (($av['id'] ?? '') === $id) { $avIdx = $i; break; }
+                }
+                if ($avIdx === null) {
+                    throw new \RuntimeException('Avenant introuvable.');
+                }
+                $av = $data['btpAvenants'][$avIdx];
+                if (($av['statut'] ?? '') !== 'brouillon') {
+                    throw new \RuntimeException("Avenant déjà traité (statut : {$av['statut']}).");
+                }
+
+                $chIdx = null;
+                foreach ($data['btpChantiers'] ?? [] as $i => $c) {
+                    if (($c['id'] ?? '') === ($av['chantier_id'] ?? '')) { $chIdx = $i; break; }
+                }
+                if ($chIdx === null) {
+                    throw new \RuntimeException('Chantier de l\'avenant introuvable.');
+                }
+
+                $montant = Sanitizer::float($av['montant'] ?? 0);
+                $jours = max(0, Sanitizer::int($av['jours_delai'] ?? 0));
+                $type = $av['type'] ?? 'montant';
+
+                // Application au chantier
+                if (in_array($type, ['montant', 'montant_delai'], true) && $montant != 0.0) {
+                    $data['btpChantiers'][$chIdx]['budget_initial'] = Sanitizer::float($data['btpChantiers'][$chIdx]['budget_initial'] ?? 0) + $montant;
+                }
+                if (in_array($type, ['delai', 'montant_delai'], true) && $jours > 0) {
+                    $fin = $data['btpChantiers'][$chIdx]['date_fin_prevue'] ?? null;
+                    $baseTime = $fin ? strtotime((string) $fin) : time();
+                    if ($baseTime === false) { $baseTime = time(); }
+                    $data['btpChantiers'][$chIdx]['date_fin_prevue'] = date('Y-m-d', $baseTime + $jours * 86400);
+                }
+
+                $data['btpAvenants'][$avIdx]['statut'] = 'validé';
+                $data['btpAvenants'][$avIdx]['updated_at'] = date('c');
+
+                $data['notifications'][] = [
+                    'id' => Database::generateId(),
+                    'userId' => '',
+                    'targetRole' => 'COND_TRAVAUX',
+                    'message' => "Avenant {$id} validé sur « {$data['btpChantiers'][$chIdx]['nom']} »"
+                        . ($montant != 0.0 ? " : budget " . ($montant > 0 ? '+' : '') . $montant . ' GNF' : '')
+                        . ($jours > 0 ? " délai +{$jours} j" : '') . '.',
+                    'type' => 'INFO',
+                    'isRead' => false,
+                    'link' => '',
+                    'createdAt' => date('c'),
+                ];
+
+                $result = ['avenant' => $data['btpAvenants'][$avIdx], 'chantier' => $data['btpChantiers'][$chIdx]];
+                return $data;
+            });
+        } catch (\RuntimeException $e) {
+            Response::json(['error' => $e->getMessage()], 409);
+        }
+
+        Response::json(['success' => true] + $result, 201);
+    }
+
+    /**
+     * POST /api/btp/chantiers/:id/liberer-retenues  { accountId }
+     * À la réception définitive : libère TOUTES les retenues de garanties
+     * non libérées (transaction CREDIT + marquage), atomiquement.
+     */
+    public function libererRetenues(Request $request, $id) {
+        AuthMiddleware::authorize($request, ...self::FINANCE_ROLES);
+        $body = $request->getBody();
+
+        $accountId = Sanitizer::text($body['accountId'] ?? '', 64);
+        if ($accountId === '') {
+            Response::json(['error' => 'Compte de trésorerie obligatoire.'], 400);
+        }
+
+        $db = Database::getInstance();
+        $result = null;
+
+        try {
+            $db->transaction(static function ($data) use ($id, $accountId, &$result) {
+                $chIdx = null;
+                foreach ($data['btpChantiers'] ?? [] as $i => $c) {
+                    if (($c['id'] ?? '') === $id) { $chIdx = $i; break; }
+                }
+                if ($chIdx === null) {
+                    throw new \RuntimeException('Chantier introuvable.');
+                }
+                $chantier = $data['btpChantiers'][$chIdx];
+                if (!in_array($chantier['statut'] ?? '', ['réception_définitive', 'clôturé'], true)) {
+                    throw new \RuntimeException('Les retenues ne se libèrent qu\'après la réception définitive.');
+                }
+
+                $account = null;
+                foreach ($data['treasury_accounts'] ?? [] as $acc) {
+                    if (($acc['id'] ?? '') === $accountId) { $account = $acc; break; }
+                }
+                if ($account === null) {
+                    throw new \RuntimeException('Compte de trésorerie introuvable.');
+                }
+
+                // Total des retenues facturées non libérées
+                $total = 0.0;
+                $count = 0;
+                foreach ($data['btpSituations'] ?? [] as $i => $s) {
+                    if (($s['chantier_id'] ?? '') !== $id) continue;
+                    if (($s['statut'] ?? '') !== 'facturée') continue;
+                    if (!empty($s['retenue_liberee'])) continue;
+                    $total += Sanitizer::float($s['retenue_amount'] ?? 0);
+                    $data['btpSituations'][$i]['retenue_liberee'] = true;
+                    $data['btpSituations'][$i]['updated_at'] = date('c');
+                    $count++;
+                }
+                if ($count === 0 || $total <= 0) {
+                    throw new \RuntimeException('Aucune retenue à libérer sur ce chantier.');
+                }
+
+                $transaction = [
+                    'id' => Database::generateId(),
+                    'accountId' => $accountId,
+                    'toAccountId' => null,
+                    'type' => 'CREDIT',
+                    'amount' => $total,
+                    'date' => date('c'),
+                    'referenceId' => (string) $id,
+                    'category' => 'SITUATION_TRAVAUX',
+                    'description' => "Libération retenues de garantie ({$count} situations) — Chantier : {$chantier['nom']}",
+                    'isReconciled' => false,
+                    'attachmentUrl' => '',
+                    'createdBy' => null,
+                    'chantierId' => (string) $id,
+                ];
+                $data['transactions'][] = $transaction;
+
+                foreach ($data['treasury_accounts'] as &$acc) {
+                    if (($acc['id'] ?? '') === $accountId) {
+                        $acc['balance'] = Sanitizer::float($acc['balance'] ?? 0) + $total;
+                        break;
+                    }
+                }
+                unset($acc);
+
+                $data['notifications'][] = [
+                    'id' => Database::generateId(),
+                    'userId' => '',
+                    'targetRole' => 'GERANT',
+                    'message' => "Retenues de garantie libérées : {$total} GNF encaissés sur « {$chantier['nom']} ».",
+                    'type' => 'SUCCESS',
+                    'isRead' => false,
+                    'link' => '',
+                    'createdAt' => date('c'),
+                ];
+
+                $result = ['transaction' => $transaction, 'total_liberre' => $total, 'situations' => $count];
                 return $data;
             });
         } catch (\RuntimeException $e) {

@@ -1,8 +1,8 @@
 import React from 'react';
 import { useApp } from '../../store';
 import { BtpChantierStat } from '../../types';
-import { HardHat, ShieldAlert, Truck, TrendingUp, Wallet, Activity, CalendarRange } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { HardHat, ShieldAlert, Truck, TrendingUp, Wallet, Activity, CalendarRange, AlertTriangle, Lock } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend, BarChart, Bar } from 'recharts';
 import { Card, PageHeader, SectionTitle, Stat, Badge, statusTone, EmptyState } from '../../components/ui';
 
 const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
@@ -25,7 +25,6 @@ export const BtpDashboardView = () => {
   const {
     btpChantiers, btpSituations, btpIncidents, btpEngins, btpChantierStats, btpJournaux,
   } = useApp();
-
   const statById = new Map<string, BtpChantierStat>(btpChantierStats.map(s => [s.id, s] as [string, BtpChantierStat]));
   const fmt = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
 
@@ -49,11 +48,76 @@ export const BtpDashboardView = () => {
   })();
 
   const situationsFacturees = btpSituations.filter(s => s.statut === 'facturée').reduce((a, s) => a + s.montant_facture, 0);
+  const retenuesBloquees = btpChantierStats.reduce((a, s) => a + (s.retenue_bloquee ?? 0), 0);
   const margeGlobale = btpChantiers.reduce((acc, c) => {
     const st = statById.get(c.id);
     if (!st) return acc;
-    return acc + (c.budget_initial || 0) - st.budget_engage - st.cout_mo_reel;
+    return acc + (c.budget_initial || 0) - st.budget_engage - st.cout_mo_reel - (st.cout_engins ?? 0) - (st.cout_sous_traitance ?? 0);
   }, 0);
+
+  // Chantiers en retard (fin prévue dépassée, non clôturés)
+  const chantiersRetard = btpChantiers.filter(c =>
+    c.date_fin_prevue &&
+    new Date(c.date_fin_prevue).getTime() < Date.now() &&
+    !['clôturé', 'réception_définitive'].includes(c.statut)
+  );
+  const penalitesTotales = chantiersRetard.reduce((a, c) => {
+    const jours = Math.ceil((Date.now() - new Date(c.date_fin_prevue!).getTime()) / 86400000);
+    return a + jours * (c.penalite_journaliere || 0);
+  }, 0);
+
+  // ---- Courbe S : 12 derniers mois — valeur acquise (avancement × budget)
+  // et facturation cumulée, en % du budget total actif ----
+  const sCurveData = (() => {
+    const now = new Date();
+    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const months: { key: string; name: string; acquis: number; facture: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, name: monthNames[d.getMonth()], acquis: 0, facture: 0 });
+    }
+    const budgetTotal = btpChantiers.reduce((a, c) => a + (c.budget_initial || 0), 0) || 1;
+    const byKey = new Map(months.map(m => [m.key, m]));
+
+    // Avancement physique : dernier journal du mois par chantier × budget
+    for (const c of btpChantiers) {
+      const journaux = btpJournaux
+        .filter(j => j.chantier_id === c.id && j.date)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const lastOfMonth = new Map<string, number>();
+      for (const j of journaux) {
+        const d = new Date(j.date);
+        if (isNaN(d.getTime())) continue;
+        lastOfMonth.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, j.avancement_pct || 0);
+      }
+      let prev = 0;
+      for (const m of months) {
+        const pct = lastOfMonth.get(m.key);
+        if (pct !== undefined) prev = pct;
+        m.acquis += (prev / 100) * (c.budget_initial || 0);
+      }
+    }
+    // Facturation cumulée
+    const factureParMois = new Map<string, number>();
+    for (const s of btpSituations) {
+      if (s.statut !== 'facturée' || !s.date_facturation) continue;
+      const d = new Date(s.date_facturation);
+      if (isNaN(d.getTime())) continue;
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      factureParMois.set(k, (factureParMois.get(k) ?? 0) + s.montant_facture);
+    }
+    let cumul = 0;
+    for (const m of months) {
+      cumul += factureParMois.get(m.key) ?? 0;
+      m.facture = cumul;
+      m.acquis = Math.round(m.acquis);
+    }
+    return months.map(m => ({
+      name: m.name,
+      'Valeur acquise': Math.round((m.acquis / budgetTotal) * 100),
+      'Facturé cumulé': Math.round((m.facture / budgetTotal) * 100),
+    }));
+  })();
 
   // ---- Données du graphe budget vs consommé ----
   const chartData = actifs.concat(planification).slice(0, 8).map(c => {
@@ -89,9 +153,50 @@ export const BtpDashboardView = () => {
         <Stat label="Chantiers actifs" value={String(actifs.length)} icon={<HardHat size={17} />} accent="gold" hint={`${planification.length} en planification`} />
         <Stat label="Avancement pondéré" value={`${avancementPondere} %`} icon={<Activity size={17} />} accent="blue" hint="pondéré par budget" />
         <Stat label="Situations facturées" value={fmt(situationsFacturees)} icon={<TrendingUp size={17} />} accent="emerald" hint="encaissées en trésorerie" />
-        <Stat label="Marge prévisionnelle" value={fmt(margeGlobale)} icon={<Wallet size={17} />} accent={margeGlobale >= 0 ? 'gold' : 'rose'} hint="budget − engagé − MO" />
+        <Stat label="Marge prévisionnelle" value={fmt(margeGlobale)} icon={<Wallet size={17} />} accent={margeGlobale >= 0 ? 'gold' : 'rose'} hint="budget − dépenses − MO − engins − ST" />
+        <Stat label="Retenues bloquées" value={fmt(retenuesBloquees)} icon={<Lock size={17} />} accent="amber" hint="libérables à la réception définitive" />
+        <Stat
+          label="Chantiers en retard"
+          value={String(chantiersRetard.length)}
+          icon={<AlertTriangle size={17} />}
+          accent={chantiersRetard.length > 0 ? 'rose' : 'emerald'}
+          hint={penalitesTotales > 0 ? `pénalités estimées ${fmt(penalitesTotales)} GNF` : 'dans les délais'}
+        />
+      </div>
+
+      {/* ---- Courbe S (Vague 2) ---- */}
+      <Card className="p-6">
+        <SectionTitle icon={<Activity size={15} />}>Courbe S — valeur acquise vs facturation (% du portefeuille)</SectionTitle>
+        <div className="h-[260px] w-full -ml-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={sCurveData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="sAcquis" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#9C7434" stopOpacity={0.22} />
+                  <stop offset="95%" stopColor="#9C7434" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="sFacture" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#257D53" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="#257D53" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 6" vertical={false} stroke="#E2DFD8" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} dy={8} tick={{ fill: '#A9A399', fontSize: 11, fontWeight: 500 }} />
+              <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} dx={-6} width={40} tick={{ fill: '#A9A399', fontSize: 11, fontWeight: 500 }} />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#DCC791', strokeDasharray: '4 4' }} />
+              <Legend wrapperStyle={{ fontSize: 11.5, color: '#868077', paddingTop: 6 }} iconType="circle" iconSize={8} />
+              <Area type="monotone" dataKey="Valeur acquise" stroke="#9C7434" strokeWidth={2.5} fill="url(#sAcquis)" fillOpacity={1} activeDot={{ r: 4, fill: '#9C7434', stroke: '#fff', strokeWidth: 2 }} />
+              <Area type="monotone" dataKey="Facturé cumulé" stroke="#257D53" strokeWidth={2.5} fill="url(#sFacture)" fillOpacity={1} activeDot={{ r: 4, fill: '#257D53', stroke: '#fff', strokeWidth: 2 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* ---- Bandeau complémentaire ---- */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Stat label="Incidents ouverts" value={String(incidentsOuverts.length)} icon={<ShieldAlert size={17} />} accent={incidentsOuverts.length > 0 ? 'rose' : 'emerald'} hint="toutes gravités" />
         <Stat label="Engins disponibles" value={`${enginsDispo}/${btpEngins.length}`} icon={<Truck size={17} />} accent="blue" hint="parc matériel" />
+        <Stat label="Chantiers en retard" value={String(chantiersRetard.length)} icon={<AlertTriangle size={17} />} accent={chantiersRetard.length > 0 ? 'rose' : 'emerald'} hint={penalitesTotales > 0 ? `pénalités ${fmt(penalitesTotales)} GNF` : 'dans les délais'} />
       </div>
 
       {/* ---- Budget vs consommé ---- */}

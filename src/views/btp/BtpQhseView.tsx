@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import { useApp } from '../../store';
 import { BtpIncidentGravite } from '../../types';
+import { Badge, statusTone } from '../../components/ui';
+import { ClipboardCheck } from 'lucide-react';
 
 export const BtpQhseView = () => {
-  const { btpIncidents, btpChantiers, createBtpIncident, updateBtpIncidentStatus, updateBtpChantier, currentRole } = useApp();
+  const {
+    btpIncidents, btpChantiers, createBtpIncident, updateBtpIncidentStatus, updateBtpChantier, currentRole,
+    btpInspections, createBtpInspection, updateBtpInspection,
+  } = useApp();
   const [newIncident, setNewIncident] = useState({ chantier_id: '', gravite: 'mineur' as BtpIncidentGravite, description: '', mesures_correctives: '' });
+  const [newInsp, setNewInsp] = useState({ chantier_id: '', type: 'inspection' as 'inspection' | 'audit' | 'visite', date: new Date().toISOString().slice(0, 10), constats: '', actions_correctives: '', gravite: 'mineure' as 'mineure' | 'majeure' | 'critique' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +193,78 @@ export const BtpQhseView = () => {
              </div>
           </div>
 
+        </div>
+      </div>
+
+      {/* ============ INSPECTIONS PRÉVENTIVES (Vague 2) ============ */}
+      <div className="mt-6 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <ClipboardCheck size={18} className="text-indigo-500" />
+          Inspections & Audits Préventifs ({btpInspections.length})
+        </h2>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Formulaire */}
+          {(currentRole === 'QHSE_BTP' || currentRole === 'GERANT') && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newInsp.chantier_id) return;
+                await createBtpInspection({ ...newInsp, statut: newInsp.constats ? 'réalisée' : 'planifiée' } as any);
+                setNewInsp({ chantier_id: '', type: 'inspection', date: new Date().toISOString().slice(0, 10), constats: '', actions_correctives: '', gravite: 'mineure' });
+              }}
+              className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-200"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <select required className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newInsp.chantier_id} onChange={e => setNewInsp({ ...newInsp, chantier_id: e.target.value })}>
+                  <option value="">Chantier…</option>
+                  {btpChantiers.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                </select>
+                <select className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newInsp.type} onChange={e => setNewInsp({ ...newInsp, type: e.target.value as typeof newInsp.type })}>
+                  <option value="inspection">Inspection</option>
+                  <option value="audit">Audit</option>
+                  <option value="visite">Visite</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="date" required className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newInsp.date} onChange={e => setNewInsp({ ...newInsp, date: e.target.value })} />
+                <select className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newInsp.gravite} onChange={e => setNewInsp({ ...newInsp, gravite: e.target.value as typeof newInsp.gravite })}>
+                  <option value="mineure">Gravité mineure</option>
+                  <option value="majeure">Gravité majeure</option>
+                  <option value="critique">Gravité critique</option>
+                </select>
+              </div>
+              <textarea className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" rows={2} placeholder="Constats (vide = inspection planifiée)" value={newInsp.constats} onChange={e => setNewInsp({ ...newInsp, constats: e.target.value })} />
+              <textarea className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" rows={2} placeholder="Actions correctives" value={newInsp.actions_correctives} onChange={e => setNewInsp({ ...newInsp, actions_correctives: e.target.value })} />
+              <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700">
+                {newInsp.constats ? 'Enregistrer l\'inspection réalisée' : 'Planifier l\'inspection'}
+              </button>
+            </form>
+          )}
+
+          {/* Liste */}
+          <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+            {btpInspections.length === 0 && <p className="text-sm text-slate-400">Aucune inspection planifiée — la prévention commence ici.</p>}
+            {[...btpInspections].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(insp => {
+              const c = btpChantiers.find(x => x.id === insp.chantier_id);
+              return (
+                <div key={insp.id} className="p-3.5 rounded-lg border border-slate-100 bg-slate-50/60">
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span className="text-[12.5px] font-bold text-slate-800 capitalize">{insp.type}</span>
+                    <Badge tone={statusTone(insp.statut)}>{insp.statut}</Badge>
+                    {insp.gravite && <Badge tone={insp.gravite === 'critique' ? 'rose' : insp.gravite === 'majeure' ? 'amber' : 'blue'}>{insp.gravite}</Badge>}
+                    <span className="ml-auto text-[10.5px] text-slate-400 font-mono">{new Date(insp.date).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                  <p className="text-[11.5px] text-slate-500">{c?.nom ?? insp.chantier_id}</p>
+                  {insp.constats && <p className="text-[12px] text-slate-700 mt-1.5 leading-snug"><strong>Constats :</strong> {insp.constats}</p>}
+                  {insp.actions_correctives && <p className="text-[11.5px] text-indigo-700 mt-1 leading-snug"><strong>Actions :</strong> {insp.actions_correctives}</p>}
+                  {insp.statut === 'réalisée' && (currentRole === 'QHSE_BTP' || currentRole === 'GERANT') && (
+                    <button onClick={() => updateBtpInspection(insp.id, { statut: 'clôturée' })} className="mt-2 text-[10.5px] font-bold text-emerald-600 uppercase tracking-wide hover:text-emerald-700">✓ Clôturer</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
