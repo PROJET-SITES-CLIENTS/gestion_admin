@@ -28,10 +28,17 @@ export default function ManagerView() {
   const closedProjects = projects.filter(p => p.status !== 'NOUVEAU').length;
   const paidProjects = projects.filter(p => p.paymentStatus === 'PAID').length;
   
-  const expectedRevenue = projects.reduce((acc, p) => acc + (p.budget || 0), 0);
+  // CA attendu = budget des projets non annulés
+  const expectedRevenue = projects.filter(p => p.status !== 'ANNULE').reduce((acc, p) => acc + (p.budget || 0), 0);
+  // CA réellement encaissé = somme des échéances PAYÉES (pas le budget complet
+  // dès le premier acompte — l'ancien code comptait 100% dès accountantPaymentConfirm)
   const securedRevenue = projects.reduce((acc, p) => {
-    if (p.paymentStatus === 'PAID' || p.accountantPaymentConfirm) return acc + (p.budget || 0);
-    return acc;
+    if (p.paymentStatus !== 'PAID' && !p.accountantPaymentConfirm) return acc;
+    const paid = (p.paymentPlan?.installments || [])
+      .filter(i => i.status === 'PAID')
+      .reduce((s, i) => s + (i.amount || 0), 0);
+    // Si pas de plan : fallback sur budget si complètement payé
+    return acc + (paid > 0 ? paid : (p.paymentStatus === 'PAID' ? (p.budget || 0) : 0));
   }, 0);
 
   const { filters, setFilters, filteredProjects: hookFilteredProjects } = useProjectFilter(projects);
@@ -283,16 +290,21 @@ export default function ManagerView() {
                 <tbody>
                   {prospects.map(p => (
                     <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-slate-900">{p.companyName}</td>
-                      <td className="px-4 py-3">{p.contactName}</td>
-                      <td className="px-4 py-3">{p.email}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
+                      <td className="px-4 py-3">{p.phone}</td>
+                      <td className="px-4 py-3">{p.email || '—'}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-sm ${p.status === 'CLIENT' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {p.status}
+                        <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-sm ${
+                          p.stage === 'GAGNE' ? 'bg-emerald-100 text-emerald-700' :
+                          p.stage === 'PERDU' ? 'bg-rose-100 text-rose-700' :
+                          p.qualification === 'CHAUD' ? 'bg-amber-100 text-amber-700' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {p.stage === 'GAGNE' ? 'CLIENT' : p.qualification || p.stage}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => { if (window.confirm(`Supprimer ?`)) deleteProspect(p.id); }} className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-sm">
+                        <button onClick={() => { if (window.confirm(`Supprimer le prospect "${p.name}" ?`)) deleteProspect(p.id); }} className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-sm">
                           <Trash2 size={16} />
                         </button>
                       </td>

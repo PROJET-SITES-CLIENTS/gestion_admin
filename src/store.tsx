@@ -815,8 +815,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     await syncProject(projectId, updates);
     
-    // Auto-generate transaction
-    // Use the first treasury account if available
+    // Auto-generate transaction — avertir si aucun compte de trésorerie
     const mainAccount = treasuryAccounts[0];
     if (mainAccount) {
         await addTransaction({
@@ -827,6 +826,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             category: 'VENTE',
             description: `Encaissement ${installmentName} - Projet: ${p.name}`
         });
+    } else {
+        pushToast('ATTENTION : encaissement enregistré SANS écriture de trésorerie (aucun compte créé). Créez un compte dans la Comptabilité.', 'WARNING');
     }
 
     await addNotification('COMPTABLE', `Un encaissement de ${amount.toLocaleString()} GNF a été enregistré pour le projet ${p.name}.`, 'SUCCESS');
@@ -1003,6 +1004,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           clientName: prospect.name,
           clientContact: prospect.phone + (prospect.email ? ' / ' + prospect.email : '')
         });
+        // Notification : nouvelle affaire convertie
+        await addNotification('GERANT', `Nouvelle affaire convertie : « ${prospect.name} » (projet #${newProj.id.slice(0, 8)}).`, 'SUCCESS');
         return newProj.id;
       }
     } catch (err) { reportError(err, 'Opération'); }

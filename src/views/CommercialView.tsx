@@ -58,7 +58,7 @@ export const CommercialProjectCard: React.FC<{ project: Project, onViewDetails: 
 }
 
 export default function CommercialView() {
-  const { projects, addProject, cancelProject } = useApp();
+  const { projects, addProject, cancelProject, confirmPaymentCommercial } = useApp();
   const { filters, setFilters, filteredProjects } = useProjectFilter(projects);
   const [newProjectName, setNewProjectName] = useState('');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -177,6 +177,20 @@ export default function CommercialView() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                {selectedProject.status !== 'ANNULE' && !selectedProject.commercialPaymentConfirm && (
+                  <button
+                    onClick={() => confirmPaymentCommercial(selectedProject.id)}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded-sm text-xs transition-colors border border-emerald-200"
+                    title="Confirme la commande client et débloque le plan de paiement côté compta"
+                  >
+                    ✓ Confirmer la commande
+                  </button>
+                )}
+                {selectedProject.commercialPaymentConfirm && (
+                  <span className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-sm text-[10px] font-bold uppercase border border-emerald-100">
+                    Commande confirmée
+                  </span>
+                )}
                 {selectedProject.status !== 'ANNULE' && (
                   <button 
                     onClick={() => {

@@ -279,6 +279,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (route === 'users' && param2 === 'delete') {
       const user = requireRole(req, res, 'GERANT'); if (!user) return;
       if (param1 === user.id) return res.status(400).json({ error: 'Auto-suppression impossible.' });
+
+      // Garde : protéger le compte admin principal
+      const target = await db.getUserByUsername('admin');
+      if (target && target.id === param1) {
+        return res.status(403).json({ error: 'Impossible de supprimer le compte administrateur principal.' });
+      }
+
+      // Garde : impossible de supprimer le dernier gérant actif
+      const allUsers = await db.getUsers();
+      const targetUser = allUsers.find((u: any) => u.id === param1);
+      if (targetUser?.role === 'GERANT') {
+        const activeGerants = allUsers.filter((u: any) => u.role === 'GERANT' && u.is_active !== false);
+        if (activeGerants.length <= 1) {
+          return res.status(403).json({ error: 'Impossible de supprimer le dernier compte Gérant actif.' });
+        }
+      }
+
       const ok = await db.deleteUser(param1);
       return res.json({ success: ok });
     }
