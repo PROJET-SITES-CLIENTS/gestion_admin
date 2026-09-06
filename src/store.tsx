@@ -1627,7 +1627,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         // Les situations libérées seront rechargées au prochain fetchData.
         fetchData();
-        pushToast(`Retenues libérées : ${d.total_liberre.toLocaleString('fr-FR')} GNF encaissés.`, 'SUCCESS');
+        pushToast(`Retenues libérées : ${(d.total_libere ?? 0).toLocaleString('fr-FR')} GNF encaissés.`, 'SUCCESS');
         return true;
       }
       pushToast(await readApiError(res, 'Libération impossible'), 'ERROR');

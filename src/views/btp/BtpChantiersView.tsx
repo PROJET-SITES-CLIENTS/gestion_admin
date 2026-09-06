@@ -177,6 +177,17 @@ export const BtpChantiersView = () => {
     if (!selectedChantierId) return;
     const heures = pointageHeures[employeeId];
     if (heures === undefined) return;
+    // Garde : 0 à 12 heures par jour maximum
+    if (heures < 0 || heures > 12) {
+      pushToast('Heures invalides : entre 0 et 12 heures par jour.', 'ERROR');
+      return;
+    }
+    // Garde : chantier doit être actif pour pointer
+    const chantier = btpChantiers.find(c => c.id === selectedChantierId);
+    if (chantier && !['en_cours', 'planification'].includes(chantier.statut)) {
+      pushToast(`Impossible de pointer sur un chantier « ${chantier.statut} ».`, 'ERROR');
+      return;
+    }
     await createBtpPointage({ employee_id: employeeId, chantier_id: selectedChantierId, date: pointageDate, heures, presence: heures > 0 ? 'présent' : 'absent' });
     setPointageHeures(prev => { const n = { ...prev }; delete n[employeeId]; return n; });
   };
@@ -212,16 +223,24 @@ export const BtpChantiersView = () => {
   const handleExportCSV = () => {
     if (!selectedChantier) return;
     const sits = btpSituations.filter(s => s.chantier_id === selectedChantier.id);
+    const avs = btpAvenants.filter(a => a.chantier_id === selectedChantier.id);
     const rows = [
       ['Chantier', selectedChantier.nom],
       ['Export', new Date().toLocaleString('fr-FR')], [],
+      ['=== SITUATIONS DE TRAVAUX ==='],
       ['Periode', 'HT', 'TVA', 'TTC', 'Retenue', 'Net encaisse', 'Statut', 'Facturee le'],
       ...sits.map(s => [s.periode, s.montant_ht ?? '', s.tva_amount ?? 0, s.montant_facture, s.retenue_amount ?? 0, s.montant_facture - (s.retenue_amount ?? 0), s.statut, s.date_facturation ? new Date(s.date_facturation).toLocaleDateString('fr-FR') : '']), [],
+      ['=== AVENANTS ==='],
+      ['ID', 'Type', 'Objet', 'Montant', 'Jours', 'Statut', 'Date'],
+      ...avs.map(a => [a.id.slice(0, 8), a.type, a.objet || '', a.montant || 0, a.jours_delai || 0, a.statut, a.date || '']), [],
+      ['=== SYNTHESE FINANCIERE ==='],
+      ['Budget marche (avec avenants)', selectedChantier.budget_initial || 0],
       ['Depenses engagees (TTC)', selectedStat?.budget_engage ?? 0],
       ['MO reelle', selectedStat?.cout_mo_reel ?? 0],
       ['Cout engins', selectedStat?.cout_engins ?? 0],
       ['Sous-traitance', selectedStat?.cout_sous_traitance ?? 0],
       ['Retenues bloquees', selectedStat?.retenue_bloquee ?? 0],
+      ['Situations facturees', selectedStat?.montant_situations_facturees ?? 0],
     ];
     const csv = '\uFEFF' + rows.map(r => r.join(';')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -487,7 +506,7 @@ export const BtpChantiersView = () => {
                       <label className="label">Retenue de garantie (%)</label>
                       <input type="number" min={0} max={50} className="input !py-1.5"
                         defaultValue={retenuePct} key={`rg-${selectedChantier.id}-${retenuePct}`}
-                        onBlur={e => { const v = Number(e.target.value); if (v !== retenuePct) updateBtpChantier(selectedChantier.id, { retenue_garantie_pct: v }); }} />
+                        onBlur={e => { const v = Math.min(50, Math.max(0, Number(e.target.value))); if (v !== retenuePct) updateBtpChantier(selectedChantier.id, { retenue_garantie_pct: v }); }} />
                     </div>
                     <div>
                       <label className="label">Pénalité de retard (GNF/jour)</label>

@@ -620,11 +620,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const user = requireRole(req, res, ...schema.roles); if (!user) return;
       const id = genId();
       const item = { id, ...(schema.defaults || {}), ...sanitize(body), created_by: user.id, createdAt: new Date().toISOString(), updated_at: new Date().toISOString() };
-      // Le statut par défaut n'écrase PAS celui fourni par le client
-      // (ex: inspection avec constats → 'réalisée' au lieu de 'planifiée')
-      // SAUF pour les tables à workflow strict (offres, chantiers, BC).
-      const STRICT_STATUS_TABLES = ['btpOffres', 'btpChantiers', 'btpBonCommandes', 'btpAvenants'];
-      if (schema.defaults?.statut !== undefined && !body.statut && STRICT_STATUS_TABLES.includes(param1)) {
+      // Tables à workflow STRICT : le statut initial est TOUJOURS forcé par le
+      // serveur, quoi que dise le client (anti-contournement des transitions).
+      // Ex: impossible de créer un BC directement en 'reçu', une offre en 'gagnée',
+      // un avenant en 'validé' (sans passer par l'endpoint atomique de validation).
+      const STRICT_STATUS_TABLES = ['btpOffres', 'btpChantiers', 'btpBonCommandes', 'btpAvenants', 'btpSituations'];
+      if (schema.defaults?.statut !== undefined && STRICT_STATUS_TABLES.includes(param1)) {
         item.statut = schema.defaults.statut;
       }
       await db.insert(param1, item);
@@ -673,7 +674,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const chantier = chantiers.find((c: any) => c.id === sit.chantier_id);
       const chantierNom = chantier?.nom || 'chantier inconnu';
 
+      // Garde : la retenue ne peut pas dépasser le montant (net >= 0)
       const retenue = Number(sit.retenue_amount) || 0;
+      if (retenue > montant) {
+        return res.status(400).json({ error: `Retenue de garantie (${retenue.toLocaleString('fr-FR')} GNF) supérieure au montant (${montant.toLocaleString('fr-FR')} GNF).` });
+      }
+
       const net = montant - retenue;
       const tva = Number(sit.tva_amount) || 0;
       const ht = Number(sit.montant_ht) || montant;
@@ -718,19 +724,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const chantier = await db.getItem('btpChantiers', av.chantier_id);
       if (!chantier) return res.status(404).json({ error: 'Chantier introuvable.' });
+      // Garde : pas d'avenant sur un chantier clôturé ou en réception définitive
+      if (['clôturé', 'réception_définitive'].includes(chantier.statut)) {
+        return res.status(409).json({ error: `Impossible de valider un avenant sur un chantier « ${chantier.statut} ».` });
+      }
 
       const montant = Number(av.montant) || 0;
       const jours = Number(av.jours_delai) || 0;
       const type = av.type || 'montant';
       const chantierUpdates: any = {};
 
-      if (['montant', 'montant_delai'].includes(type) && montant !== 0) {
+      // 'penalite' : le montant est TOUJOURS déduit du budget (négatif forcé)
+      if (type === 'penalite' && montant !== 0) {
+        chantierUpdates.budget_initial = (chantier.budget_initial || 0) - Math.abs(montant);
+      }
+      // 'montant' et 'montant_delai' : appliquent le signe tel quel
+      else if (['montant', 'montant_delai'].includes(type) && montant !== 0) {
         chantierUpdates.budget_initial = (chantier.budget_initial || 0) + montant;
       }
+      // 'delai' et 'montant_delai' : repoussent la date de fin
       if (['delai', 'montant_delai'].includes(type) && jours > 0) {
         const fin = chantier.date_fin_prevue ? new Date(chantier.date_fin_prevue) : new Date();
         fin.setDate(fin.getDate() + jours);
         chantierUpdates.date_fin_prevue = fin.toISOString().split('T')[0];
+      }
+      // Garde : budget ne peut pas devenir négatif
+      if (chantierUpdates.budget_initial !== undefined && chantierUpdates.budget_initial < 0) {
+        return res.status(400).json({ error: `Budget insuffisant : ${(chantier.budget_initial || 0).toLocaleString('fr-FR')} - ${Math.abs(montant).toLocaleString('fr-FR')} GNF < 0.` });
       }
 
       await db.update('btpChantiers', chantier.id, chantierUpdates);
@@ -809,7 +829,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (totalHT <= 0) {
         totalHT = lignes.reduce((s: number, l: any) => s + (Number(l.quantite) || 0) * (Number(l.pu) || 0), 0);
       }
-      const tva = Math.round(totalHT * 0.18 * 100) / 100;
+      // TVA depuis la config entreprise (défaut 18% Guinée)
+      const config = await db.getItem('config', 'main') || {};
+      const tvaRate = (Number(config.tvaRate) || 18) / 100;
+      const tva = Math.round(totalHT * tvaRate * 100) / 100;
       const ttc = totalHT + tva;
 
       const chantiers = await db.getTable('btpChantiers');

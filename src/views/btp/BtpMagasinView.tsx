@@ -10,7 +10,7 @@ export const BtpMagasinView = () => {
   const {
     currentRole, btpArticles, btpBonCommandes, btpMouvements, btpChantiers,
     createBtpArticle, createBtpBonCommande, soumettreBtpBonCommande, recevoirBtpBonCommande,
-    createBtpMouvement, btpFournisseurs, createBtpFournisseur,
+    createBtpMouvement, btpFournisseurs, createBtpFournisseur, pushToast,
   } = useApp();
 
   const [tab, setTab] = useState<Tab>('STOCK');
@@ -76,6 +76,23 @@ export const BtpMagasinView = () => {
   const handleCreateMvt = async () => {
     if (!newMvt.article_id || newMvt.quantite <= 0) return;
     if (newMvt.type !== 'entree' && !newMvt.chantier_id) return;
+
+    // Garde anti-stock-négatif : vérifier le stock disponible AVANT la sortie
+    if (newMvt.type === 'sortie_chantier') {
+      const stockDisponible = stock.get(newMvt.article_id)?.depot ?? 0;
+      if (newMvt.quantite > stockDisponible) {
+        pushToast(`Stock insuffisant au dépôt : ${stockDisponible} disponible(s), ${newMvt.quantite} demandé(s).`, 'ERROR');
+        return;
+      }
+    }
+    if (newMvt.type === 'retour') {
+      const stockChantier = stock.get(newMvt.article_id)?.chantiers.get(newMvt.chantier_id) ?? 0;
+      if (newMvt.quantite > stockChantier) {
+        pushToast(`Stock insuffisant sur le chantier : ${stockChantier} présent(s), ${newMvt.quantite} à retourner.`, 'ERROR');
+        return;
+      }
+    }
+
     // Valorisation auto depuis le PU catalogue (éditable) pour l'imputation chantier.
     const art = btpArticles.find(a => a.id === newMvt.article_id);
     await createBtpMouvement({
