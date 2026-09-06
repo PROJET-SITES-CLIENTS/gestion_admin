@@ -315,7 +315,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       response.tasks = (allData.tasks || []).filter((t: any) => t.receiverRole === role || t.receiverRole === 'ALL' || t.senderId === userId);
       response.notifications = (allData.notifications || []).filter((n: any) => n.targetRole === role || n.targetRole === 'ALL');
 
-      const btpTables = ['btpOffres','btpChantiers','btpEngins','btpIncidents','btpJournaux','btpSituations','btpAffectations','btpPointages','btpArticles','btpBonCommandes','btpMouvements','btpDocuments','btpAvenants','btpOs','btpSousTraitances','btpFournisseurs','btpCautionnements','btpInspections','btpPrixUnitaires','btpHeuresEngins'];
+      const btpTables = ['btpOffres','btpChantiers','btpEngins','btpIncidents','btpJournaux','btpSituations','btpAffectations','btpPointages','btpArticles','btpBonCommandes','btpMouvements','btpDocuments','btpAvenants','btpOs','btpSousTraitances','btpFournisseurs','btpCautionnements','btpInspections','btpPrixUnitaires','btpHeuresEngins','btpReserves','btpHabilitations'];
       for (const t of btpTables) response[t] = allData[t] || [];
       const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
       for (const t of agroTables) response[t] = allData[t] || [];
@@ -620,7 +620,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const user = requireRole(req, res, ...schema.roles); if (!user) return;
       const id = genId();
       const item = { id, ...(schema.defaults || {}), ...sanitize(body), created_by: user.id, createdAt: new Date().toISOString(), updated_at: new Date().toISOString() };
-      if (schema.defaults?.statut !== undefined) item.statut = schema.defaults.statut;
+      // Le statut par défaut n'écrase PAS celui fourni par le client
+      // (ex: inspection avec constats → 'réalisée' au lieu de 'planifiée')
+      // SAUF pour les tables à workflow strict (offres, chantiers, BC).
+      const STRICT_STATUS_TABLES = ['btpOffres', 'btpChantiers', 'btpBonCommandes', 'btpAvenants'];
+      if (schema.defaults?.statut !== undefined && !body.statut && STRICT_STATUS_TABLES.includes(param1)) {
+        item.statut = schema.defaults.statut;
+      }
       await db.insert(param1, item);
       return res.status(201).json(item);
     }

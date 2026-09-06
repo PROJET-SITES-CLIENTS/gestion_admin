@@ -251,19 +251,25 @@ export const BtpChantiersView = () => {
   const enginsDispos = btpEngins.filter(e => e.statut !== 'hors_service');
 
   const budgetDetail = selectedChantier?.budget_detail;
-  const coutsTotaux = (selectedStat?.budget_engage ?? 0) + 
-    (selectedStat?.cout_stock_sorti ?? 0) + 
+  // P&L : on utilise le MAX entre budget_engage (achats via dépenses, dont BC)
+  // et cout_stock_sorti (valorisation des sorties magasin) pour les matériaux.
+  // Les deux canaux se chevauchent : un BC réceptionné crée une dépense PUIS
+  // une sortie valorisée — additionner les deux = double comptage.
+  // MO, engins et sous-traitance sont des canaux distincts (additionnés).
+  const coutsMatieres = Math.max(
+    selectedStat?.budget_engage ?? 0,
+    selectedStat?.cout_stock_sorti ?? 0
+  );
+  const coutsTotaux = coutsMatieres +
     (selectedStat?.cout_mo_reel ?? 0) + 
     (selectedStat?.cout_engins ?? 0) + 
     (selectedStat?.cout_sous_traitance ?? 0);
-  const budgetRevise = (selectedChantier?.budget_initial || 0) + 
-    chantierAvenants.filter(a => a.statut === 'validé').reduce((acc, a) => acc + (a.montant || 0), 0);
-  
+  // NOTE : le serveur APPLIQUE déjà les avenants validés à budget_initial
+  // et date_fin_prevue (POST /btp/avenants/:id/valider). On lit donc
+  // directement les valeurs du chantier — PAS de re-addition locale
+  // (sinon double comptage des montants ET des retards).
+  const budgetRevise = selectedChantier?.budget_initial || 0;
   const dateFinRevisee = selectedChantier?.date_fin_prevue ? new Date(selectedChantier.date_fin_prevue) : null;
-  if (dateFinRevisee) {
-    const joursSupp = chantierAvenants.filter(a => a.statut === 'validé').reduce((acc, a) => acc + (a.jours_delai || 0), 0);
-    dateFinRevisee.setDate(dateFinRevisee.getDate() + joursSupp);
-  }
 
   const marge = budgetRevise - coutsTotaux;
   const enRetard = dateFinRevisee &&

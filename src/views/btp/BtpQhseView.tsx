@@ -6,7 +6,7 @@ import { ClipboardCheck } from 'lucide-react';
 
 export const BtpQhseView = () => {
   const {
-    btpIncidents, btpChantiers, createBtpIncident, updateBtpIncidentStatus, updateBtpChantier, currentRole,
+    btpIncidents, btpChantiers, createBtpIncident, updateBtpIncidentStatus, updateBtpChantier, updateBtpChantierStatus, currentRole,
     btpInspections, createBtpInspection, updateBtpInspection, pushToast,
     btpHabilitations, createBtpHabilitation, updateBtpHabilitation, btpEmployeeDirectory
   } = useApp();
@@ -36,21 +36,26 @@ export const BtpQhseView = () => {
     try {
       const chantier = btpChantiers.find(c => c.id === chantierId);
       if (!chantier) return;
-      
+
       const updates: any = {};
       if (roleType === 'QHSE') updates.qhse_unlock = true;
       if (roleType === 'DG') updates.dg_unlock = true;
 
       await updateBtpChantier(chantierId, updates);
-      
-      // Check if both are unlocked
-      if ((roleType === 'QHSE' || chantier.qhse_unlock) && (roleType === 'DG' || chantier.dg_unlock)) {
-         // Should realistically trigger a state change to en_cours
-         pushToast('Double validation effectuée. Le chantier peut reprendre.', 'INFO');
+
+      // Double validation complète → reprise automatique du chantier
+      const qhseOk = roleType === 'QHSE' || chantier.qhse_unlock === true;
+      const dgOk = roleType === 'DG' || chantier.dg_unlock === true;
+
+      if (qhseOk && dgOk) {
+        await updateBtpChantierStatus(chantierId, 'en_cours');
+        pushToast('Double validation accordée : chantier repris (en_cours).', 'SUCCESS');
       } else {
-         pushToast('Validation enregistrée. En attente de la seconde validation.', 'INFO');
+        pushToast('Validation enregistrée. En attente de la seconde validation.', 'INFO');
       }
-    } catch(e) {}
+    } catch (e: any) {
+      pushToast(e?.message || 'Erreur lors de la validation.', 'ERROR');
+    }
   };
 
   return (

@@ -1242,6 +1242,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (status === 'gagnée') {
       const o = btpOffres.find(x => x.id === id);
       if (o) {
+        // Garde d'unicité : ne pas créer un 2e chantier si un existe déjà
+        const chantierExistant = btpChantiers.some(c => c.offre_id === id);
+        if (chantierExistant) {
+          pushToast('Un chantier existe déjà pour cette offre.', 'WARNING');
+          return;
+        }
+        // Garde montant : refuser budget 0 (offre non chiffrée)
+        if (!o.montant_estime || o.montant_estime <= 0) {
+          pushToast("Impossible : montant estimé à 0. Chiffrez l'offre avant de la déclarer gagnée.", 'ERROR');
+          return;
+        }
         // Le chiffrage validé devient le budget prévisionnel du chantier.
         let budgetDetail: any = undefined;
         try { budgetDetail = o.chiffrage_json ? JSON.parse(o.chiffrage_json) : undefined; } catch { /* chiffrage illisible : ignoré */ }
@@ -1273,17 +1284,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const chantier = btpChantiers.find(c => c.id === id);
     if (!chantier) return;
 
-    if (status === 'en_cours' && (!chantier.rh_validation || !chantier.materiel_validation)) {
+    if (status === 'en_cours' && chantier.statut === 'planification' && (!chantier.rh_validation || !chantier.materiel_validation)) {
       throw new Error("Validation RH et Matériel obligatoires avant le démarrage du chantier.");
     }
-    const updated = await crudUpdate('btpChantiers', id, { statut: status }, 'Changement statut chantier');
+
+    // À la suspension : reset des unlocks pour forcer une nouvelle double validation
+    const updates: any = { statut: status };
+    if (status === 'suspendu') {
+      updates.qhse_unlock = false;
+      updates.dg_unlock = false;
+    }
+
+    const updated = await crudUpdate('btpChantiers', id, updates, 'Changement statut chantier');
     if (updated) setBtpChantiers(prev => prev.map(c => c.id === id ? updated : c));
 
     // Ordres de Service automatiques aux transitions officielles.
+    // "reprise" si le chantier ÉTAIT suspendu et repasse en_cours,
+    // sinon "démarrage" pour un premier lancement.
     const osType: BtpOrdreService['type'] | null =
-      status === 'en_cours' ? 'démarrage' :
       status === 'suspendu' ? 'arrêt' :
-      status === 'réception_provisoire' || status === 'réception_définitive' ? 'réception' : null;
+      status === 'réception_provisoire' || status === 'réception_définitive' ? 'réception' :
+      status === 'en_cours' ? (chantier.statut === 'suspendu' ? 'reprise' : 'démarrage') : null;
     if (osType) {
       const os = await crudCreate<BtpOrdreService>('btpOs', {
         chantier_id: id,
@@ -1339,6 +1360,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const assignBtpEngin = async (enginId: string, chantierId: string | undefined) => {
     const engin = btpEngins.find(e => e.id === enginId);
     if (!engin) return;
+    // Garde : impossible d'affecter un engin HS ou en maintenance
+    if (chantierId && ['hors_service', 'en_maintenance'].includes(engin.statut)) {
+      throw new Error(`Impossible d'affecter un engin ${engin.statut.replace(/_/g, ' ')}.`);
+    }
+    // Garde : exclusivité d'affectation
     if (chantierId && engin.statut === 'affecté' && engin.chantier_affecte_id !== chantierId) {
       throw new Error("Cet engin est déjà affecté à un autre chantier en cours.");
     }
@@ -1352,12 +1378,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateBtpEnginStatus = async (enginId: string, status: BtpEnginStatus) => {
-    const updated = await crudUpdate('btpEngins', enginId, { statut: status }, 'Statut engin');
+    // Au passage HS : détacher l'engin de son chantier
+    const engin = btpEngins.find(e => e.id === enginId);
+    const updates: any = { statut: status };
+    if (status === 'hors_service' && engin?.chantier_affecte_id) {
+      updates.chantier_affecte_id = '';
+    }
+    const updated = await crudUpdate('btpEngins', enginId, updates, 'Statut engin');
     if (updated) setBtpEngins(prev => prev.map(e => e.id === enginId ? updated : e));
     if (status === 'hors_service') {
-      const e = btpEngins.find(x => x.id === enginId);
-      if (e?.chantier_affecte_id) {
-        await addNotification('COND_TRAVAUX', `L'engin ${e.identifiant_interne} est hors service !`, 'ERROR');
+      if (engin?.chantier_affecte_id) {
+        await addNotification('COND_TRAVAUX', `L'engin ${engin.identifiant_interne} est hors service ! (détaché du chantier)`, 'ERROR');
       }
     }
   };
