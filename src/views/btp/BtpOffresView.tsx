@@ -89,10 +89,11 @@ const ChiffrageModal: React.FC<{
         {lignes.length > 0 && (
           <div className="rounded-lg border border-slate-100 overflow-hidden">
             <table className="table-premium w-full">
-              <thead><tr><th>Famille</th><th>Désignation</th><th className="text-right">Qté</th><th className="text-right">PU</th><th className="text-right">Total</th><th></th></tr></thead>
+              <thead><tr><th>Phase</th><th>Famille</th><th>Désignation</th><th className="text-right">Qté</th><th className="text-right">PU</th><th className="text-right">Total</th><th></th></tr></thead>
               <tbody>
                 {lignes.map((l, i) => (
                   <tr key={i}>
+                    <td className="!py-2"><span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">{l.phase || 'Général'}</span></td>
                     <td className="!py-2"><span className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400">{FAMILLES.find(f => f.id === l.famille)?.label}</span></td>
                     <td className="!py-2">{l.designation}</td>
                     <td className="!py-2 text-right font-mono">{l.quantite}</td>
@@ -167,18 +168,24 @@ const AddChiffrageLine: React.FC<{
   const [quantite, setQuantite] = useState(1);
   const [pu, setPu] = useState(0);
 
+  const [phase, setPhase] = useState('');
+
   // Synchronise la famille par défaut si elle change à l'extérieur
   React.useEffect(() => setFamille(familleDefault), [familleDefault]);
 
   return (
     <div className="grid grid-cols-12 gap-2 items-end">
-      <div className="col-span-3">
+      <div className="col-span-2">
+        <label className="label">Phase / Lot</label>
+        <input className="input" value={phase} onChange={e => setPhase(e.target.value)} placeholder="Gros oeuvre..." />
+      </div>
+      <div className="col-span-2">
         <label className="label">Famille</label>
         <select className="input" value={famille} onChange={e => { const f = e.target.value as BtpChiffrageLigne['famille']; setFamille(f); onFamilleChange(f); }}>
           {FAMILLES.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
         </select>
       </div>
-      <div className="col-span-4">
+      <div className="col-span-3">
         <label className="label">Désignation</label>
         <input className="input" value={designation} onChange={e => setDesignation(e.target.value)} placeholder="Ciment, ferraillage…" />
       </div>
@@ -191,7 +198,7 @@ const AddChiffrageLine: React.FC<{
         <input type="number" min={0} className="input" value={pu || ''} onChange={e => setPu(Number(e.target.value))} />
       </div>
       <button
-        onClick={() => { if (!designation.trim() || quantite <= 0 || pu <= 0) return; onAdd({ famille, designation, quantite, pu }); setDesignation(''); setQuantite(1); setPu(0); }}
+        onClick={() => { if (!designation.trim() || quantite <= 0 || pu <= 0) return; onAdd({ famille, designation, quantite, pu, phase: phase || undefined }); setDesignation(''); setQuantite(1); setPu(0); }}
         disabled={!designation.trim() || quantite <= 0 || pu <= 0}
         className="btn btn-dark col-span-1 !px-0"
         title="Ajouter la ligne"

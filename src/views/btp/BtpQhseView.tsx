@@ -7,9 +7,12 @@ import { ClipboardCheck } from 'lucide-react';
 export const BtpQhseView = () => {
   const {
     btpIncidents, btpChantiers, createBtpIncident, updateBtpIncidentStatus, updateBtpChantier, currentRole,
-    btpInspections, createBtpInspection, updateBtpInspection, pushToast } = useApp();
+    btpInspections, createBtpInspection, updateBtpInspection, pushToast,
+    btpHabilitations, createBtpHabilitation, updateBtpHabilitation, btpEmployeeDirectory
+  } = useApp();
   const [newIncident, setNewIncident] = useState({ chantier_id: '', gravite: 'mineur' as BtpIncidentGravite, description: '', mesures_correctives: '' });
   const [newInsp, setNewInsp] = useState({ chantier_id: '', type: 'inspection' as 'inspection' | 'audit' | 'visite', date: new Date().toISOString().slice(0, 10), constats: '', actions_correctives: '', gravite: 'mineure' as 'mineure' | 'majeure' | 'critique' });
+  const [newHab, setNewHab] = useState({ employee_id: '', type_habilitation: '', date_obtention: '', date_expiration: '' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,6 +263,69 @@ export const BtpQhseView = () => {
                   {insp.statut === 'réalisée' && (currentRole === 'QHSE_BTP' || currentRole === 'GERANT') && (
                     <button onClick={() => updateBtpInspection(insp.id, { statut: 'clôturée' })} className="mt-2 text-[10.5px] font-bold text-emerald-600 uppercase tracking-wide hover:text-emerald-700">✓ Clôturer</button>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ============ HABILITATIONS & CERTIFICATIONS (Point 9) ============ */}
+      <div className="mt-6 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <ClipboardCheck size={18} className="text-emerald-500" />
+          Habilitations & Certifications Sécurité
+        </h2>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {(currentRole === 'QHSE_BTP' || currentRole === 'RH' || currentRole === 'GERANT') && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newHab.employee_id) return;
+                await createBtpHabilitation(newHab);
+                setNewHab({ employee_id: '', type_habilitation: '', date_obtention: '', date_expiration: '' });
+                pushToast('Habilitation enregistrée', 'SUCCESS');
+              }}
+              className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-200"
+            >
+              <select required className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newHab.employee_id} onChange={e => setNewHab({ ...newHab, employee_id: e.target.value })}>
+                <option value="">Sélectionner un employé…</option>
+                {btpEmployeeDirectory.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName} ({e.matricule || 'N/A'})</option>)}
+              </select>
+              <input required type="text" className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" placeholder="Type (ex: CACES R482, Habilitation H0B0...)" value={newHab.type_habilitation} onChange={e => setNewHab({ ...newHab, type_habilitation: e.target.value })} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1">Date Obtention</label>
+                  <input type="date" required className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newHab.date_obtention} onChange={e => setNewHab({ ...newHab, date_obtention: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1">Date Expiration</label>
+                  <input type="date" required className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newHab.date_expiration} onChange={e => setNewHab({ ...newHab, date_expiration: e.target.value })} />
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700">Enregistrer l'habilitation</button>
+            </form>
+          )}
+
+          <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+            {btpHabilitations.length === 0 && <p className="text-sm text-slate-400">Aucune habilitation enregistrée.</p>}
+            {[...btpHabilitations].sort((a, b) => new Date(a.date_expiration).getTime() - new Date(b.date_expiration).getTime()).map(hab => {
+              const emp = btpEmployeeDirectory.find(e => e.id === hab.employee_id);
+              const expDate = new Date(hab.date_expiration);
+              const isExpired = expDate.getTime() < Date.now();
+              const isExpiringSoon = expDate.getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000 && !isExpired;
+              
+              return (
+                <div key={hab.id} className={`p-3.5 rounded-lg border ${isExpired ? 'border-red-200 bg-red-50' : isExpiringSoon ? 'border-amber-200 bg-amber-50' : 'border-slate-100 bg-slate-50'} flex justify-between items-center`}>
+                  <div>
+                    <p className="text-[13px] font-bold text-slate-800">{emp ? `${emp.firstName} ${emp.lastName}` : 'Employé inconnu'}</p>
+                    <p className="text-[12px] text-slate-600 font-medium">{hab.type_habilitation}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">Expire le : {expDate.toLocaleDateString('fr-FR')}</p>
+                  </div>
+                  <div>
+                    {isExpired ? <Badge tone="rose">Expirée</Badge> : isExpiringSoon ? <Badge tone="amber">Bientôt expirée</Badge> : <Badge tone="success">Valide</Badge>}
+                  </div>
                 </div>
               );
             })}

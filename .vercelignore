@@ -1,0 +1,16 @@
+# Fichiers exclus du déploiement Vercel
+node_modules
+_archive
+einsof-deploy
+backups
+uploads
+dist
+.git
+backend
+lib/schema.sql
+scripts
+*.zip
+*.log
+db.json
+prepare_deploy.ps1
+dev.js

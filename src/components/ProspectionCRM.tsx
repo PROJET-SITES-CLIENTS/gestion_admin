@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../store';
 import { Prospect, ProspectStage, ProspectQualification, ProspectMeeting } from '../types';
-import { Plus, X, Phone, Mail, Calendar, Upload, AlertCircle, Save, Clock, Search, LayoutGrid, List, ArrowRight, DollarSign, Target, Briefcase, Video } from 'lucide-react';
+import { Plus, X, Phone, Mail, Calendar, Upload, AlertCircle, Save, Clock, Search, LayoutGrid, List, ArrowRight, DollarSign, Target, Briefcase, Video, Mic } from 'lucide-react';
 
 const STAGE_COLUMNS: { id: ProspectStage; label: string; color: string }[] = [
   { id: 'NOUVEAU', label: 'Nouveau', color: 'border-blue-200 bg-blue-50' },
@@ -14,7 +14,7 @@ const STAGE_COLUMNS: { id: ProspectStage; label: string; color: string }[] = [
 ];
 
 export const ProspectionCRM: React.FC = () => {
-  const { prospects, addProspect, updateProspect, convertProspectToProject, deleteProspect, user } = useApp();
+  const { prospects, addProspect, updateProspect, convertProspectToProject, deleteProspect, currentUser, systemUsers, currentRole } = useApp();
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [newInteractionNote, setNewInteractionNote] = useState('');
   
@@ -24,8 +24,11 @@ export const ProspectionCRM: React.FC = () => {
   const [newMeetingLocation, setNewMeetingLocation] = useState('');
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterOwnerId, setFilterOwnerId] = useState<string>('ALL');
+  const [filterTag, setFilterTag] = useState<string>('');
   const [viewMode, setViewMode] = useState<'KANBAN' | 'LIST'>('KANBAN');
   const [activeTab, setActiveTab] = useState<'INFOS' | 'CALLS' | 'MEETINGS' | 'AUDIT'>('INFOS');
+  const [isRecording, setIsRecording] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -54,7 +57,7 @@ export const ProspectionCRM: React.FC = () => {
         id: Date.now().toString(),
         date: new Date().toISOString(),
         action: 'Création du prospect',
-        user: user?.firstName + ' ' + user?.lastName
+        user: currentUser?.firstName + ' ' + currentUser?.lastName
       }],
     });
     e.currentTarget.reset();
@@ -89,7 +92,7 @@ export const ProspectionCRM: React.FC = () => {
               id: Date.now().toString() + Math.random(),
               date: new Date().toISOString(),
               action: 'Import CSV',
-              user: user?.firstName + ' ' + user?.lastName
+              user: currentUser?.firstName + ' ' + currentUser?.lastName
             }]
           });
           importedCount++;
@@ -103,49 +106,53 @@ export const ProspectionCRM: React.FC = () => {
 
   const saveInteraction = () => {
     if (!selectedProspect || !newInteractionNote.trim()) return;
+
     const newInteraction = {
       id: Date.now().toString(),
       date: new Date().toISOString(),
       notes: newInteractionNote
     };
-    
-    const newHistory = {
-      id: Date.now().toString() + 'h',
-      date: new Date().toISOString(),
-      action: 'Appel / Note ajoutée',
-      user: user?.firstName + ' ' + user?.lastName
-    };
 
-    updateProspect(selectedProspect.id, {
+    const newHistory = {
+      id: Date.now().toString() + Math.random(),
+      date: new Date().toISOString(),
+      action: 'Nouvelle interaction ajoutée',
+      user: currentUser?.firstName + ' ' + currentUser?.lastName
+    };
+    
+    updateProspect(selectedProspect.id, { 
       interactions: [...(selectedProspect.interactions || []), newInteraction],
       history: [...(selectedProspect.history || []), newHistory]
     });
+    
     setSelectedProspect({
       ...selectedProspect,
       interactions: [...(selectedProspect.interactions || []), newInteraction],
       history: [...(selectedProspect.history || []), newHistory]
     });
+    
     setNewInteractionNote('');
   };
 
   const saveMeeting = () => {
     if (!selectedProspect || !newMeetingDate || !newMeetingTime) return;
-    const newMeeting: ProspectMeeting = {
+
+    const newMeeting = {
       id: Date.now().toString(),
       date: newMeetingDate,
       time: newMeetingTime,
-      location: newMeetingLocation || 'Téléphone/Visio',
-      status: 'SCHEDULED'
-    };
-    
-    const newHistory = {
-      id: Date.now().toString() + 'h',
-      date: new Date().toISOString(),
-      action: `RDV programmé le ${newMeetingDate} à ${newMeetingTime}`,
-      user: user?.firstName + ' ' + user?.lastName
+      location: newMeetingLocation || 'À définir',
+      status: 'SCHEDULED' as const
     };
 
-    updateProspect(selectedProspect.id, {
+    const newHistory = {
+      id: Date.now().toString() + Math.random(),
+      date: new Date().toISOString(),
+      action: `Nouveau RDV programmé le ${newMeetingDate} à ${newMeetingTime}`,
+      user: currentUser?.firstName + ' ' + currentUser?.lastName
+    };
+    
+    updateProspect(selectedProspect.id, { 
       meetings: [...(selectedProspect.meetings || []), newMeeting],
       history: [...(selectedProspect.history || []), newHistory],
       stage: 'RDV_FIXE' // Auto move to RDV Fixe
@@ -172,7 +179,7 @@ export const ProspectionCRM: React.FC = () => {
         id: Date.now().toString(),
         date: new Date().toISOString(),
         action: actionDesc,
-        user: user?.firstName + ' ' + user?.lastName
+        user: currentUser?.firstName + ' ' + currentUser?.lastName
       }];
     }
     
@@ -182,13 +189,36 @@ export const ProspectionCRM: React.FC = () => {
 
   const activeProspects = useMemo(() => {
     return prospects.filter(p => {
+      // Pour les commerciaux, forcer le filtre sur eux-mêmes
+      if (currentRole === 'COMMERCIAL' && p.ownerId && p.ownerId !== currentUser?.id) {
+        return false; // Ils ne voient que les leurs ou les non-attribués
+      }
+      
+      if (filterOwnerId !== 'ALL') {
+        if (filterOwnerId === 'UNASSIGNED' && p.ownerId) return false;
+        if (filterOwnerId !== 'UNASSIGNED' && p.ownerId !== filterOwnerId) return false;
+      }
+      
+      if (filterTag && (!p.tags || !p.tags.includes(filterTag))) {
+        return false;
+      }
+
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        return p.name?.toLowerCase().includes(term) || p.phone?.includes(term) || (p.email && p.email.toLowerCase().includes(term));
+        return p.name?.toLowerCase().includes(term) || p.phone?.includes(term) || (p.email && p.email.toLowerCase().includes(term)) || (p.company && p.company.toLowerCase().includes(term));
       }
       return true;
     });
-  }, [prospects, searchTerm]);
+  }, [prospects, searchTerm, filterOwnerId, filterTag, currentRole, currentUser]);
+
+  // Tous les tags existants pour le dropdown
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    prospects.forEach(p => {
+      p.tags?.forEach(t => tags.add(t));
+    });
+    return Array.from(tags);
+  }, [prospects]);
 
   // KPIs
   const totalPipelineValue = useMemo(() => {
@@ -196,7 +226,8 @@ export const ProspectionCRM: React.FC = () => {
       .filter(p => p.stage !== 'PERDU' && p.stage !== 'GAGNE')
       .reduce((acc, p) => {
         const val = parseInt((p.estimatedBudget || '0').replace(/[^0-9]/g, ''), 10);
-        return acc + (isNaN(val) ? 0 : val);
+        const prob = p.probability !== undefined && p.probability !== null ? p.probability : 50; // Probabilité par défaut
+        return acc + (isNaN(val) ? 0 : (val * prob) / 100);
       }, 0);
   }, [prospects]);
 
@@ -223,7 +254,7 @@ export const ProspectionCRM: React.FC = () => {
         id: Date.now().toString(),
         date: new Date().toISOString(),
         action: `Déplacé de ${p.stage} vers ${newStage}`,
-        user: user?.firstName + ' ' + user?.lastName
+        user: currentUser?.firstName + ' ' + currentUser?.lastName
       };
       updateProspect(id, { 
         stage: newStage,
@@ -280,18 +311,51 @@ export const ProspectionCRM: React.FC = () => {
         </form>
 
         <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto items-center">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Rechercher prospect..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full border border-slate-200 pl-9 pr-3 py-2 text-sm rounded-sm focus:outline-none focus:border-slate-400" 
-            />
+          <div className="flex gap-2 w-full sm:w-auto overflow-x-auto">
+            <div className="relative flex-shrink-0 w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Rechercher prospect, entreprise..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full border border-slate-200 pl-9 pr-3 py-2 text-sm rounded-sm focus:outline-none focus:border-slate-400" 
+              />
+            </div>
+            
+            {currentRole === 'GERANT' && (
+              <select 
+                value={filterOwnerId}
+                onChange={(e) => setFilterOwnerId(e.target.value)}
+                className="border border-slate-200 py-2 px-3 text-sm rounded-sm focus:outline-none focus:border-slate-400 bg-white"
+              >
+                <option value="ALL">Tous les commerciaux</option>
+                <option value="UNASSIGNED">Non attribués</option>
+                {systemUsers.filter(u => u.role === 'COMMERCIAL').map(u => (
+                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                ))}
+              </select>
+            )}
+
+            <select 
+              value={filterTag}
+              onChange={(e) => setFilterTag(e.target.value)}
+              className="border border-slate-200 py-2 px-3 text-sm rounded-sm focus:outline-none focus:border-slate-400 bg-white"
+            >
+              <option value="">Tous les tags</option>
+              {allTags.map(tag => (
+                <option key={tag} value={tag}>{tag}</option>
+              ))}
+            </select>
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto justify-end">
+            <button 
+              onClick={() => setIsRecording(!isRecording)} 
+              className={`border px-3 py-2 text-sm rounded-sm flex items-center gap-2 whitespace-nowrap transition-colors ${isRecording ? 'border-red-200 bg-red-50 text-red-600 animate-pulse' : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+            >
+              <Mic size={16} /> {isRecording ? 'Écoute en cours...' : 'Agent IA Vocal'}
+            </button>
             <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleCsvImport} />
             <button onClick={() => fileInputRef.current?.click()} className="border border-slate-200 text-slate-700 px-3 py-2 text-sm rounded-sm hover:bg-slate-50 flex items-center gap-2 whitespace-nowrap">
               <Upload size={16} /> Import CSV
@@ -452,6 +516,32 @@ export const ProspectionCRM: React.FC = () => {
               
               {activeTab === 'INFOS' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
+                  {/* Company & Job */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Entreprise</label>
+                      <input 
+                        type="text" 
+                        value={selectedProspect.company || ''}
+                        onChange={(e) => setSelectedProspect({...selectedProspect, company: e.target.value})}
+                        onBlur={() => updateProspectField('company', selectedProspect.company)}
+                        className="w-full border border-slate-300 rounded-sm text-sm px-3 py-2"
+                        placeholder="Nom de l'entreprise"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Poste occupé</label>
+                      <input 
+                        type="text" 
+                        value={selectedProspect.jobTitle || ''}
+                        onChange={(e) => setSelectedProspect({...selectedProspect, jobTitle: e.target.value})}
+                        onBlur={() => updateProspectField('jobTitle', selectedProspect.jobTitle)}
+                        className="w-full border border-slate-300 rounded-sm text-sm px-3 py-2"
+                        placeholder="Ex: Directeur Général"
+                      />
+                    </div>
+                  </div>
+
                   {/* Status Controls */}
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
@@ -479,6 +569,33 @@ export const ProspectionCRM: React.FC = () => {
                         </select>
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Probabilité de closing : {selectedProspect.probability !== undefined && selectedProspect.probability !== null ? selectedProspect.probability : 50}%</label>
+                        <input 
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value={selectedProspect.probability !== undefined && selectedProspect.probability !== null ? selectedProspect.probability : 50}
+                          onChange={(e) => setSelectedProspect({...selectedProspect, probability: Number(e.target.value)})}
+                          onBlur={() => updateProspectField('probability', selectedProspect.probability, `Probabilité mise à jour: ${selectedProspect.probability}%`)}
+                          className="w-full mt-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tags (séparés par virgule)</label>
+                        <input 
+                          type="text" 
+                          value={selectedProspect.tags?.join(', ') || ''}
+                          onChange={(e) => setSelectedProspect({...selectedProspect, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})}
+                          onBlur={() => updateProspectField('tags', selectedProspect.tags)}
+                          className="w-full border border-slate-300 rounded-sm text-sm px-3 py-2"
+                          placeholder="Ex: VIP, Urgent, BTP"
+                        />
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Prochaine relance</label>
                       <input 
@@ -491,6 +608,21 @@ export const ProspectionCRM: React.FC = () => {
                         className="w-full border border-slate-300 rounded-sm text-sm px-3 py-2"
                       />
                     </div>
+                    {currentRole === 'GERANT' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Attribué à (Commercial)</label>
+                        <select
+                          value={selectedProspect.ownerId || ''}
+                          onChange={(e) => updateProspectField('ownerId', e.target.value, 'Attribution modifiée')}
+                          className="w-full border border-slate-300 rounded-sm text-sm px-3 py-2 bg-slate-50 font-medium"
+                        >
+                          <option value="">-- Non attribué --</option>
+                          {systemUsers.filter(u => u.role === 'COMMERCIAL').map(u => (
+                            <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   <hr className="border-slate-100" />

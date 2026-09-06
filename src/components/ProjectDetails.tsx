@@ -51,6 +51,8 @@ export const ProjectDetails = ({ project }: { project: Project }) => {
         <div className="lg:col-span-1 print:col-span-1">
           <SectionCard title="1. Informations Générales" icon={Building2}>
             <Field label="Nom du Projet" value={project.name} />
+            <Field label="Client" value={project.clientName} />
+            <Field label="Contact Client" value={project.clientContact} />
             <Field label="Description" value={project.description || 'Aucune description fournie.'} fullWidth />
             <Field label="Date de création" value={new Date(project.createdAt).toLocaleDateString('fr-FR')} />
             <Field label="Statut" value={project.status.replace(/_/g, ' ')} />

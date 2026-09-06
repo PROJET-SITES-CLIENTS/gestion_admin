@@ -126,6 +126,7 @@ export interface CompanyConfig {
   rhCnssEmployeeRate?: number; // ex: 5 (%)
   rhCnssCeiling?: number; // ex: 2500000 ou 5000000
   rhRtsAbattement?: number; // ex: 20 (%)
+  rhRtsRate?: number; // ex: 10 (%)
   // Paramètres Comptabilité & TVA
   tvaRate?: number; // ex: 18 (%)
   
@@ -190,6 +191,7 @@ export interface ProspectMeeting {
   location: string;
   status: 'SCHEDULED' | 'HELD' | 'CANCELLED' | 'NO_SHOW';
   report?: string;
+  isSyncedToCalendar?: boolean; // New: Pour Google Calendar/Outlook
 }
 
 export interface ProspectHistory {
@@ -205,14 +207,30 @@ export interface ProspectInteraction {
   notes: string;
 }
 
+export interface ContactList {
+  id: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  ownerId?: string; // S'il appartient à un commercial spécifique
+  createdAt: string;
+}
+
 export interface Prospect {
   id: string;
   name: string;
+  company?: string;
+  jobTitle?: string;
   phone: string;
   email?: string;
   source?: string;
+  tags?: string[];
+  listId?: string; // Référence à ContactList
+  ownerId?: string; // Attribution au commercial (ID utilisateur)
+  
   qualification: ProspectQualification;
   stage: ProspectStage;
+  probability?: number; // Probabilité de closing (en %)
   
   interactions: ProspectInteraction[];
   meetings: ProspectMeeting[];
@@ -223,10 +241,22 @@ export interface Prospect {
   objectives?: string;
 
   nextActionDate?: string;
-  lossReason?: string; // New: Why it was lost
-  documents?: Document[]; // New: Devis etc for prospect
+  lossReason?: string; // Motif court (Prix, Concurrent, etc.)
+  lossReasonDetail?: string; // Détail libre
+  documents?: Document[]; // Devis, contrats, propositions
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ServiceProposal {
+  id: string;
+  prospectId: string;
+  title: string;
+  items: { catalogItemId: string; quantity: number; unitPrice: number; discount?: number }[];
+  totalAmount: number;
+  status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED';
+  createdAt: string;
+  validUntil: string;
 }
 
 // --- MODULE ASSISTANTE ---
@@ -276,7 +306,7 @@ export interface ServiceCatalogItem {
 
 export interface Employee {
   id: string;
-  userId?: string; // S'il a un compte utilisateur
+  userId?: string; 
   firstName: string;
   lastName: string;
   email: string;
@@ -284,19 +314,32 @@ export interface Employee {
   cnssNumber?: string;
   birthDate?: string;
   address?: string;
-  bankDetails?: string; // New: RIB
-  emergencyContact?: string; // New: Emergency contact
-  maritalStatus?: string; // New
+  bankDetails?: string; 
+  emergencyContact?: string; 
+  maritalStatus?: string;
+  managerId?: string; // Hiérarchie
   hireDate: string;
   position: string;
   department: string;
   baseSalary: number;
-  isActive: boolean; // Note: false means suspended/terminated
-  documents?: { name: string; url?: string }[];
-  leaveBalance?: number; // New: Number of remaining leave days
+  workSchedule?: string; // ex: 40h/semaine
+  isActive: boolean; 
+  documents?: { id: string; name: string; url?: string; type: string; uploadDate: string }[];
+  leaveBalance?: number; 
+  rttBalance?: number;
 }
 
-export type ContractType = 'CDI' | 'CDD' | 'STAGIAIRE' | 'APPRENTI';
+export interface CareerEvent {
+  id: string;
+  employeeId: string;
+  date: string;
+  type: 'PROMOTION' | 'SALARY_INCREASE' | 'DEPARTMENT_CHANGE' | 'ROLE_CHANGE';
+  description: string;
+  oldValue?: string;
+  newValue?: string;
+}
+
+export type ContractType = 'CDI' | 'CDD' | 'STAGIAIRE' | 'APPRENTI' | 'FREELANCE';
 
 export interface Contract {
   id: string;
@@ -305,9 +348,23 @@ export interface Contract {
   startDate: string;
   endDate?: string;
   probationEndDate?: string;
+  probationStatus?: 'IN_PROGRESS' | 'CONFIRMED' | 'REJECTED' | 'RENEWED';
   status: 'ACTIVE' | 'TERMINATED' | 'EXPIRED';
   fileUrl?: string;
 }
+
+export interface OnboardingTask {
+  id: string;
+  employeeId: string;
+  type: 'ONBOARDING' | 'OFFBOARDING';
+  title: string;
+  category: 'IT' | 'ADMIN' | 'FORMATION' | 'MATERIEL';
+  dueDate: string;
+  isCompleted: boolean;
+  assignedToRole?: Role; // ex: 'RH' ou 'ASSISTANTE'
+}
+
+export type LeaveType = 'ANNUAL' | 'SICK' | 'MATERNITY' | 'PATERNITY' | 'UNPAID' | 'RTT' | 'EXCEPTIONAL';
 
 export interface LeaveRequest {
   id: string;
@@ -315,12 +372,24 @@ export interface LeaveRequest {
   startDate: string;
   endDate: string;
   daysCount: number;
-  leaveType?: 'ANNUAL' | 'SICK' | 'MATERNITY' | 'UNPAID'; // New
+  leaveType: LeaveType;
   reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   rejectionReason?: string;
+  attachmentUrl?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  date: string; // YYYY-MM-DD
+  checkIn?: string; // HH:mm
+  checkOut?: string; // HH:mm
+  isRemote: boolean;
+  overtimeHours?: number;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'ON_LEAVE';
 }
 
 export interface SalaryAdvance {
@@ -330,7 +399,7 @@ export interface SalaryAdvance {
   date: string;
   reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REIMBURSED';
-  monthToDeduct: number; // e.g. 8 for August
+  monthToDeduct: number; 
   yearToDeduct: number;
 }
 
@@ -340,17 +409,90 @@ export interface Payslip {
   month: number;
   year: number;
   baseSalary: number;
-  bonuses: number; // Includes general bonuses
-  overtimeAmount?: number; // New: Heures sup
+  bonuses: number; 
+  overtimeAmount?: number; 
   grossSalary: number;
   cnssEmployeeAmount: number;
   cnssEmployerAmount: number;
   rtsAmount: number;
-  deductions?: number; // New: For salary advances etc.
+  deductions?: number; 
   netSalary: number;
   status: 'DRAFT' | 'VALIDATED' | 'PAID';
-  pdfUrl?: string; // New: PDF Export
+  pdfUrl?: string; 
   createdAt: string;
+}
+
+export interface PerformanceReview {
+  id: string;
+  employeeId: string;
+  reviewerId: string;
+  date: string;
+  type: 'ANNUAL' | 'SEMI_ANNUAL' | 'PROBATION';
+  score?: number; // Sur 10 ou 5
+  comments: string;
+  goalsForNextPeriod: string;
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+}
+
+export interface TrainingCourse {
+  id: string;
+  title: string;
+  description: string;
+  provider: 'INTERNAL' | 'EXTERNAL';
+  isMandatory: boolean;
+  validityMonths?: number; // Durée de validité de l'habilitation
+}
+
+export interface TrainingRecord {
+  id: string;
+  employeeId: string;
+  courseId: string;
+  completionDate: string;
+  expiryDate?: string;
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+  certificateUrl?: string;
+}
+
+export interface MedicalVisit {
+  id: string;
+  employeeId: string;
+  date: string;
+  type: 'EMBAUCHE' | 'PERIODIQUE' | 'REPRISE';
+  doctorName?: string;
+  fitForWork: boolean;
+  restrictions?: string;
+  nextDueDate?: string;
+}
+
+export interface DisciplinaryAction {
+  id: string;
+  employeeId: string;
+  date: string;
+  type: 'VERBAL_WARNING' | 'WRITTEN_WARNING' | 'SUSPENSION' | 'DISMISSAL';
+  reason: string;
+  documentUrl?: string;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  authorId: string;
+  targetDepartments: string[]; // 'ALL' pour tout le monde
+  createdAt: string;
+  isImportant: boolean;
+}
+
+export interface ExpenseReport {
+  id: string;
+  employeeId: string;
+  date: string;
+  amount: number;
+  category: 'TRAVEL' | 'MEAL' | 'SUPPLIES' | 'OTHER';
+  description: string;
+  receiptUrl?: string;
+  status: 'PENDING' | 'APPROVED_MANAGER' | 'APPROVED_RH' | 'REJECTED' | 'REIMBURSED';
+  rejectionReason?: string;
 }
 
 // --- MODULE COMMUNICATION UNIFIÉ ---
@@ -486,6 +628,7 @@ export interface BtpSituationTravaux {
 /** Ligne de chiffrage structurée (Phase 2 — éditeur ETUDES). */
 export interface BtpChiffrageLigne {
   famille: 'MATERIAUX' | 'MAIN_OEUVRE' | 'MATERIEL' | 'SOUS_TRAITANCE' | 'FRAIS_GENERAUX';
+  phase?: string; // e.g., "Terrassement", "Gros Œuvre", "Finitions"
   designation: string;
   quantite: number;
   pu: number;
@@ -633,6 +776,29 @@ export interface BtpOrdreService {
   created_by?: string;
 }
 
+/** Réserve émise lors de la réception des travaux (Point 3) */
+export interface BtpReserve {
+  id: string;
+  chantier_id: string;
+  description: string;
+  date_emission: string;
+  statut: 'en_cours' | 'levee';
+  date_levee?: string;
+  commentaire_levee?: string;
+  created_by?: string;
+}
+
+/** Habilitation/Certification employé BTP (Point 9) */
+export interface BtpHabilitation {
+  id: string;
+  employee_id: string;
+  type_habilitation: string; // ex: 'CACES R482', 'Habilitation Électrique H0B0'
+  date_obtention: string;
+  date_expiration: string;
+  document_url?: string;
+}
+
+// --- EXTENSION BTP — Vague 3 ---
 export interface BtpSousTraitance {
   id: string;
   chantier_id: string;
@@ -782,4 +948,119 @@ export interface ReclamationClient {
   statut: AgroReclamationStatus;
   date_reclamation: string;
   risque_rappel_signale: boolean;
+}
+
+// ------------------------------------------------------------------
+// MODULE COMPTABILITÉ & TRÉSORERIE (SYSCOHADA)
+// ------------------------------------------------------------------
+
+export interface AccountingAccount {
+  id: string; // Ex: "411000"
+  accountNumber: string; // Numéro du compte (ex: 411000)
+  name: string; // Nom (ex: Clients - Ventes de biens)
+  class: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9; // Classe SYSCOHADA
+  isSubAccount: boolean;
+  parentAccountId?: string;
+}
+
+export interface AccountingJournal {
+  id: string; // Ex: "VT", "ACH", "BQ", "CA", "OD"
+  code: string; // Ex: "VT"
+  name: string; // Ex: "Journal des Ventes"
+  type: 'ACHATS' | 'VENTES' | 'TRESORERIE' | 'OPERATIONS_DIVERSES' | 'A_NOUVEAUX';
+}
+
+export interface AccountingEntryLine {
+  id: string;
+  accountId: string; // Réf vers AccountingAccount.id
+  debit: number;
+  credit: number;
+  label: string; // Libellé de la ligne
+}
+
+export type AccountingEntryStatus = 'DRAFT' | 'VALIDATED'; // VALIDATED = Verrouillé (Piste d'audit)
+
+export interface AccountingEntry {
+  id: string;
+  journalId: string; // Réf vers AccountingJournal.id
+  date: string;
+  reference: string; // Ex: Numéro de facture, ID de paie
+  description: string; // Libellé général de l'écriture
+  lines: AccountingEntryLine[]; // Débit/Crédit (doivent s'équilibrer)
+  status: AccountingEntryStatus;
+  createdBy: string;
+  createdAt: string;
+  validatedAt?: string; // Horodatage pour la piste d'audit
+}
+
+export type AssetAmortizationType = 'LINEAIRE' | 'DEGRESSIF';
+
+export interface Asset {
+  id: string;
+  name: string; // Ex: Véhicule de service
+  accountId: string; // Réf vers le compte classe 2
+  purchaseDate: string;
+  purchaseValue: number;
+  amortizationType: AssetAmortizationType;
+  amortizationDurationYears: number; // Durée de vie en années
+  status: 'ACTIF' | 'CEDE' | 'REFORME';
+}
+
+// --- MODULE ASSISTANT DE DIRECTION ---
+export interface AssistantTask {
+  id: string;
+  title: string;
+  description?: string;
+  importance: 'HAUTE' | 'BASSE'; // Matrice Eisenhower
+  urgence: 'HAUTE' | 'BASSE';
+  status: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  dueDate?: string;
+  delegatedTo?: string; // ID ou nom de la personne à qui c'est délégué
+  createdAt: string;
+}
+
+export interface AssistantMeeting {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  location: string;
+  participants: string; // ex: "DG, DAF, Client XYZ"
+  agenda: string;
+  status: 'PLANNED' | 'HELD' | 'CANCELED';
+  report?: string; // Compte Rendu (CR)
+}
+
+export interface AssistantDocument {
+  id: string;
+  title: string;
+  category: 'CONTRAT' | 'ADMINISTRATIF' | 'ASSURANCE' | 'LEGAL' | 'AUTRE';
+  url: string;
+  isConfidential: boolean;
+  expirationDate?: string;
+  status: 'VALID' | 'EXPIRING' | 'EXPIRED' | 'ARCHIVED';
+  createdAt: string;
+}
+
+export interface AssistantContact {
+  id: string;
+  name: string;
+  organization: string;
+  role: string;
+  phone: string;
+  email: string;
+  category: 'PARTENAIRE' | 'INVESTISSEUR' | 'INSTITUTION' | 'PRESTATAIRE' | 'AUTRE';
+  notes?: string;
+  isVip: boolean;
+}
+
+export interface AssistantTravel {
+  id: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  purpose: string;
+  budget: number;
+  status: 'PLANNED' | 'ONGOING' | 'COMPLETED' | 'CANCELED';
+  itineraryNotes?: string;
 }

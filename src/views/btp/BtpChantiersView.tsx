@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../store';
 import { BtpChantierStatus, BtpChiffrageLigne, BtpAvenant } from '../../types';
-import { Badge, statusTone, Progress } from '../../components/ui';
+import { Badge, statusTone, Progress, Modal } from '../../components/ui';
 import { openSecureFile } from '../../utils/secureFile';
 import { generateOsPDF, generatePvPDF } from '../../utils/pdfGenerator';
 import {
@@ -24,8 +24,10 @@ export const BtpChantiersView = () => {
     btpDocuments, addBtpDocument, pushToast, companyConfig,
     btpAvenants, createBtpAvenant, validerBtpAvenant, rejeterBtpAvenant,
     btpOrdresService, btpSousTraitances, createBtpSousTraitance, solderBtpSousTraitance,
-    btpCautionnements, createBtpCautionnement, libererBtpRetenues,
+    btpCautionnements, createBtpCautionnement, libererBtpRetenues, libererCautionnement,
+    btpReserves, createBtpReserve, updateBtpReserve,
     btpEngins, btpHeuresEngins, createBtpHeureEngin, btpBonCommandes,
+    expenses, addExpense, addTask, btpOffres, validerRhChantier
   } = useApp();
 
   const [selectedChantierId, setSelectedChantierId] = useState<string | null>(null);
@@ -41,12 +43,20 @@ export const BtpChantiersView = () => {
   const [pointageHeures, setPointageHeures] = useState<Record<string, number>>({});
   // Heures engins
   const [enginHeures, setEnginHeures] = useState({ engin_id: '', heures: 0 });
+  // Dépense
+  const [newExpense, setNewExpense] = useState({ category: 'ACHAT_MARCHANDISE', amountHT: 0, description: '' });
+  // Alerte Direction
+  const [newAlert, setNewAlert] = useState({ urgency: 'HAUTE', description: '' });
+  // Vue Devis Initial
+  const [showOffreModal, setShowOffreModal] = useState(false);
   // Avenant
   const [newAvenant, setNewAvenant] = useState({ type: 'montant' as BtpAvenant['type'], objet: '', montant: 0, jours_delai: 0 });
   // Sous-traitance
   const [newST, setNewST] = useState({ entreprise: '', objet: '', montant: 0 });
   // Cautionnement
   const [newCaut, setNewCaut] = useState({ type: 'bonne_execution' as BtpCautionnementsLocal['type'], assureur_banque: '', montant: 0 });
+  // Réserves (Réception)
+  const [newReserve, setNewReserve] = useState({ description: '' });
   // GED
   const [docForm, setDocForm] = useState({ type: 'plan' as 'plan' | 'pv_reception' | 'attestation' | 'contrat' | 'photo' | 'autre', nom: '', description: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +69,44 @@ export const BtpChantiersView = () => {
   const fmt = (n: number) => n.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
   const tvaRate = (companyConfig.tvaRate || 18) / 100;
   const retenuePct = selectedChantier?.retenue_garantie_pct || 0;
+
+  const handleLiberer = async (cautionId: string) => {
+    try { await libererBtpRetenues(selectedChantierId!, cautionId); }
+    catch (err: any) { alert(err.message); }
+  };
+
+  const handleAddExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedChantierId || newExpense.amountHT <= 0) return;
+    const tva = Math.round(newExpense.amountHT * tvaRate);
+    await addExpense({
+      category: newExpense.category as any,
+      amountHT: newExpense.amountHT,
+      tvaAmount: tva,
+      amountTTC: newExpense.amountHT + tva,
+      description: `[BTP] ${newExpense.description}`,
+      date: new Date().toISOString().slice(0, 10),
+      status: 'PENDING',
+      chantier_id: selectedChantierId
+    });
+    setNewExpense({ category: 'ACHAT_MARCHANDISE', amountHT: 0, description: '' });
+    pushToast('Dépense enregistrée et transmise à la comptabilité.', 'SUCCESS');
+  };
+
+  const handleAlertDirection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedChantierId || !newAlert.description) return;
+    await addTask({
+      title: `ALERTE CHANTIER: ${selectedChantier?.nom}`,
+      description: newAlert.description,
+      status: 'TODO',
+      priority: newAlert.urgency as 'HAUTE'|'MOYENNE'|'BASSE',
+      dueDate: new Date().toISOString().slice(0, 10),
+      assignedTo: 'ASSISTANTE'
+    });
+    setNewAlert({ urgency: 'HAUTE', description: '' });
+    pushToast('Alerte transmise à la Direction.', 'WARNING');
+  };
 
   const handleStartChantier = async (id: string) => {
     try { await updateBtpChantierStatus(id, 'en_cours'); } catch (err: any) { alert(err.message); }
@@ -104,6 +152,25 @@ export const BtpChantiersView = () => {
       role_chantier: newAff.role_chantier, taux_journalier: newAff.taux_journalier,
     });
     setNewAff({ employee_id: '', role_chantier: '', taux_journalier: 0 });
+  };
+
+  const handleAddReserve = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedChantierId || !newReserve.description.trim()) return;
+    await createBtpReserve({
+      chantier_id: selectedChantierId,
+      description: newReserve.description,
+      date_emission: new Date().toISOString().slice(0, 10),
+      statut: 'en_cours'
+    });
+    setNewReserve({ description: '' });
+  };
+
+  const handleLeverReserve = async (id: string) => {
+    await updateBtpReserve(id, { 
+      statut: 'levee', 
+      date_levee: new Date().toISOString().slice(0, 10) 
+    });
   };
 
   const handlePointage = async (employeeId: string) => {
@@ -184,13 +251,26 @@ export const BtpChantiersView = () => {
   const enginsDispos = btpEngins.filter(e => e.statut !== 'hors_service');
 
   const budgetDetail = selectedChantier?.budget_detail;
-  const coutsTotaux = (selectedStat?.budget_engage ?? 0) + (selectedStat?.cout_mo_reel ?? 0) + (selectedStat?.cout_engins ?? 0) + (selectedStat?.cout_sous_traitance ?? 0);
-  const marge = selectedChantier ? selectedChantier.budget_initial - coutsTotaux : 0;
-  const enRetard = selectedChantier?.date_fin_prevue &&
-    new Date(selectedChantier.date_fin_prevue).getTime() < Date.now() &&
-    !['clôturé', 'réception_définitive'].includes(selectedChantier.statut);
-  const joursRetard = enRetard && selectedChantier?.date_fin_prevue ?
-    Math.ceil((Date.now() - new Date(selectedChantier.date_fin_prevue).getTime()) / 86400000) : 0;
+  const coutsTotaux = (selectedStat?.budget_engage ?? 0) + 
+    (selectedStat?.cout_stock_sorti ?? 0) + 
+    (selectedStat?.cout_mo_reel ?? 0) + 
+    (selectedStat?.cout_engins ?? 0) + 
+    (selectedStat?.cout_sous_traitance ?? 0);
+  const budgetRevise = (selectedChantier?.budget_initial || 0) + 
+    chantierAvenants.filter(a => a.statut === 'validé').reduce((acc, a) => acc + (a.montant || 0), 0);
+  
+  const dateFinRevisee = selectedChantier?.date_fin_prevue ? new Date(selectedChantier.date_fin_prevue) : null;
+  if (dateFinRevisee) {
+    const joursSupp = chantierAvenants.filter(a => a.statut === 'validé').reduce((acc, a) => acc + (a.jours_delai || 0), 0);
+    dateFinRevisee.setDate(dateFinRevisee.getDate() + joursSupp);
+  }
+
+  const marge = budgetRevise - coutsTotaux;
+  const enRetard = dateFinRevisee &&
+    dateFinRevisee.getTime() < Date.now() &&
+    !['clôturé', 'réception_définitive'].includes(selectedChantier?.statut || '');
+  const joursRetard = enRetard && dateFinRevisee ?
+    Math.ceil((Date.now() - dateFinRevisee.getTime()) / 86400000) : 0;
 
   // Rapprochement chiffrage / réalisé par famille (réel mappé depuis les stats)
   const rapprochement: { famille: string; prevu: number; reel: number }[] = budgetDetail?.lignes?.length ? [
@@ -258,6 +338,12 @@ export const BtpChantiersView = () => {
                     className="w-full py-2 mb-2 bg-blue-600 text-white rounded-lg text-[12.5px] font-semibold hover:bg-blue-700"
                   >Valider le Matériel</button>
                 )}
+                {c.statut === 'planification' && (currentRole === 'RH' || currentRole === 'GERANT') && !c.rh_validation && (
+                  <button
+                    onClick={async (e) => { e.stopPropagation(); await validerRhChantier(c.id); }}
+                    className="w-full py-2 mb-2 bg-emerald-600 text-white rounded-lg text-[12.5px] font-semibold hover:bg-emerald-700"
+                  >Valider RH (équipes)</button>
+                )}
                 {c.statut === 'planification' && (currentRole === 'COND_TRAVAUX' || currentRole === 'GERANT') && (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleStartChantier(c.id); }}
@@ -297,16 +383,55 @@ export const BtpChantiersView = () => {
                     <h2 className="text-lg font-bold text-slate-900">{selectedChantier.nom}</h2>
                     <p className="text-[12.5px] text-slate-500 mt-0.5">
                       {selectedChantier.client} · {selectedChantier.adresse}
-                      {selectedChantier.date_fin_prevue ? ` · fin prévue ${new Date(selectedChantier.date_fin_prevue).toLocaleDateString('fr-FR')}` : ''}
+                      {dateFinRevisee ? ` · fin prévue ${dateFinRevisee.toLocaleDateString('fr-FR')}` : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge tone={statusTone(selectedChantier.statut)}>{selectedChantier.statut.replace(/_/g, ' ')}</Badge>
+                    
+                    {selectedChantier.offre_id && (
+                      <button onClick={() => setShowOffreModal(true)} className="btn btn-ghost !py-1.5 !px-2.5 !text-[11px] text-indigo-700" title="Consulter l'offre / devis initial">
+                        <FileText size={12} /> Devis Initial
+                      </button>
+                    )}
+
                     <button onClick={handleExportCSV} className="btn btn-ghost !py-1.5 !px-2.5 !text-[11px]" title="Export comptable CSV">
                       <Download size={12} /> CSV
                     </button>
+                    <button 
+                      onClick={handleAlertDirection}
+                      className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                      title="Signaler un risque (Retard, Budget, QHSE) à la Direction"
+                    >
+                      <AlertTriangle size={12} /> Alerter Direction
+                    </button>
                   </div>
                 </div>
+
+                {/* Formulaire Alerte Direction */}
+                {newAlert.description !== undefined && (
+                  <div className="mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200 text-sm">
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={newAlert.description} 
+                        onChange={e => setNewAlert({...newAlert, description: e.target.value})}
+                        placeholder="Ex: Risque de dépassement budgétaire sur le gros œuvre..." 
+                        className="flex-1 p-1.5 border border-slate-200 rounded-md"
+                      />
+                      <select 
+                        value={newAlert.urgency} 
+                        onChange={e => setNewAlert({...newAlert, urgency: e.target.value})}
+                        className="p-1.5 border border-slate-200 rounded-md bg-white text-slate-700"
+                      >
+                        <option value="HAUTE">Urgence Haute</option>
+                        <option value="MOYENNE">Urgence Moyenne</option>
+                        <option value="BASSE">Info (Basse)</option>
+                      </select>
+                      <button onClick={handleAlertDirection} className="bg-rose-600 text-white px-3 rounded-md font-semibold hover:bg-rose-700">Envoyer</button>
+                    </div>
+                  </div>
+                )}
 
                 {enRetard && (
                   <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-[12.5px] text-rose-700 flex items-center gap-2 font-medium">
@@ -316,9 +441,13 @@ export const BtpChantiersView = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                  <div><p className="label">Budget marché</p><p className="font-mono font-bold text-[14px] text-slate-900">{fmt(selectedChantier.budget_initial)}</p></div>
-                  <div><p className="label">Dépenses</p><p className="font-mono font-bold text-[14px] text-rose-600">{fmt(selectedStat?.budget_engage ?? 0)}</p></div>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4">
+                  <div>
+                    <p className="label flex items-center gap-1">Budget révisé {budgetRevise !== selectedChantier.budget_initial && <span className="text-[9px] text-indigo-500 bg-indigo-50 px-1 rounded">Av. inclus</span>}</p>
+                    <p className="font-mono font-bold text-[14px] text-slate-900">{fmt(budgetRevise)}</p>
+                  </div>
+                  <div><p className="label">Dépenses (Achats)</p><p className="font-mono font-bold text-[14px] text-rose-600">{fmt(selectedStat?.budget_engage ?? 0)}</p></div>
+                  <div><p className="label" title="Valeur des matériaux sortis du magasin">Stock (Magasin)</p><p className="font-mono font-bold text-[14px] text-amber-600">{fmt(selectedStat?.cout_stock_sorti ?? 0)}</p></div>
                   <div><p className="label">MO réelle</p><p className="font-mono font-bold text-[14px] text-blue-600">{fmt(selectedStat?.cout_mo_reel ?? 0)}</p></div>
                   <div><p className="label">Engins</p><p className="font-mono font-bold text-[14px] text-blue-600">{fmt(selectedStat?.cout_engins ?? 0)}</p></div>
                   <div><p className="label">Sous-traitance</p><p className="font-mono font-bold text-[14px] text-blue-600">{fmt(selectedStat?.cout_sous_traitance ?? 0)}</p></div>
@@ -327,12 +456,17 @@ export const BtpChantiersView = () => {
 
                 <div className="mt-4">
                   <div className="flex justify-between text-[11px] text-slate-400 mb-1.5">
-                    <span>Coûts cumulés : {fmt(coutsTotaux)} / {fmt(selectedChantier.budget_initial)}</span>
-                    <span className="font-semibold">{selectedChantier.budget_initial > 0 ? Math.min(999, Math.round((coutsTotaux / selectedChantier.budget_initial) * 100)) : 0}% · avancement {lastAvancement}%</span>
+                    <span>Coûts cumulés : {fmt(coutsTotaux)} / {fmt(budgetRevise)}</span>
+                    <span className="font-semibold">{budgetRevise > 0 ? Math.min(999, Math.round((coutsTotaux / budgetRevise) * 100)) : 0}% · avancement {lastAvancement}%</span>
                   </div>
-                  <Progress value={selectedChantier.budget_initial > 0 ? (coutsTotaux / selectedChantier.budget_initial) * 100 : 0} tone={marge >= 0 ? 'bg-indigo-500' : 'bg-rose-500'} />
+                  <Progress value={budgetRevise > 0 ? (coutsTotaux / budgetRevise) * 100 : 0} tone={marge >= 0 ? 'bg-indigo-500' : 'bg-rose-500'} />
+                  {budgetRevise > 0 && (coutsTotaux / budgetRevise) >= 0.8 && lastAvancement < 50 && (
+                    <div className="mt-2 text-[11.5px] p-2 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5 font-medium">
+                      <AlertTriangle size={14} />
+                      Alerte critique : Plus de 80% du budget consommé, alors que l'avancement est de {lastAvancement}% !
+                    </div>
+                  )}
                 </div>
-
                 <div className="mt-4 flex flex-wrap gap-2 text-[11.5px]">
                   <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100 font-mono">Facturé : {fmt(selectedStat?.montant_situations_facturees ?? 0)}</span>
                   <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-100 font-mono">En attente : {fmt(selectedStat?.montant_situations_attente ?? 0)}</span>
@@ -618,10 +752,16 @@ export const BtpChantiersView = () => {
                           <input type="number" placeholder="% Avanc." required className="input w-1/3" value={newSituation.pct_avancement_declare || ''} onChange={e => setNewSituation({ ...newSituation, pct_avancement_declare: Number(e.target.value) })} />
                           <input type="number" placeholder="Montant HT" required className="input w-2/3" value={newSituation.montant_ht || ''} onChange={e => setNewSituation({ ...newSituation, montant_ht: Number(e.target.value) })} />
                         </div>
-                        <label className="flex items-center gap-2 text-[11.5px] text-slate-600">
-                          <input type="checkbox" checked={newSituation.avecTva} onChange={e => setNewSituation({ ...newSituation, avecTva: e.target.checked })} />
-                          TVA {companyConfig.tvaRate || 18}% ({fmt(sitTva)} GNF)
-                        </label>
+                        <div className="flex gap-4 items-center">
+                          <label className="flex items-center gap-2 text-[11.5px] text-slate-600">
+                            <input type="checkbox" checked={newSituation.avecTva} onChange={e => setNewSituation({ ...newSituation, avecTva: e.target.checked })} />
+                            TVA {companyConfig.tvaRate || 18}% ({fmt(sitTva)} GNF)
+                          </label>
+                          <label className="flex items-center gap-2 text-[11.5px] text-slate-600" title="Si coché, la TVA n'est pas facturée (reportée sur le client, très courant en BTP sous-traitance).">
+                            <input type="checkbox" checked={!newSituation.avecTva} onChange={e => setNewSituation({ ...newSituation, avecTva: !e.target.checked })} />
+                            Autoliquidation TVA (BTP)
+                          </label>
+                        </div>
                         <p className="text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded-md px-2.5 py-1.5">
                           TTC {fmt(sitTtc)} − RG {retenuePct}% ({fmt(sitRetenue)}) = <strong className="text-emerald-700">net {fmt(sitTtc - sitRetenue)} GNF</strong>
                         </p>
@@ -665,7 +805,18 @@ export const BtpChantiersView = () => {
                         <div className="flex justify-between items-center mt-1">
                           <span className="text-[10px] text-slate-400 truncate">{st.objet}</span>
                           {st.statut === 'en_cours' && currentRole === 'GERANT' && (
-                            <button onClick={() => solderBtpSousTraitance(st.id)} className="text-[9.5px] font-bold text-emerald-600 uppercase">Solder</button>
+                            <button 
+                              onClick={() => {
+                                const rating = prompt(`Note d'évaluation pour ${st.entreprise} (sur 5) :\n(Critères: Qualité, Délais, Sécurité)`);
+                                if(rating) {
+                                  solderBtpSousTraitance(st.id);
+                                  pushToast(`Sous-traitant évalué à ${rating}/5 et contrat soldé.`, 'SUCCESS');
+                                }
+                              }} 
+                              className="text-[9.5px] font-bold text-emerald-600 uppercase border border-emerald-200 px-1.5 py-0.5 rounded hover:bg-emerald-50"
+                            >
+                              Évaluer & Solder
+                            </button>
                           )}
                           {st.statut !== 'en_cours' && <Badge tone={st.statut === 'soldée' ? 'emerald' : 'rose'}>{st.statut}</Badge>}
                         </div>
@@ -699,7 +850,13 @@ export const BtpChantiersView = () => {
                           <span className="text-[11.5px] font-semibold text-slate-800">{ct.type.replace('_', ' ')}</span>
                           <span className="font-mono text-[11px] text-slate-600">{fmt(ct.montant)}</span>
                         </div>
-                        <p className="text-[10px] text-slate-400">{ct.assureur_banque}{ct.date_fin ? ` · jusqu'au ${new Date(ct.date_fin).toLocaleDateString('fr-FR')}` : ''}</p>
+                        <div className="flex justify-between items-center mt-0.5">
+                          <p className="text-[10px] text-slate-400">{ct.assureur_banque}{ct.date_fin ? ` · jusqu'au ${new Date(ct.date_fin).toLocaleDateString('fr-FR')}` : ''}</p>
+                          {ct.statut === 'active' && (currentRole === 'GERANT' || currentRole === 'COMPTABLE') && (
+                            <button onClick={() => libererCautionnement(ct.id)} className="text-[9.5px] font-bold text-emerald-600 uppercase tracking-wide hover:text-emerald-700">Libérer</button>
+                          )}
+                          {ct.statut !== 'active' && <Badge tone={ct.statut === 'libérée' ? 'emerald' : 'neutral'}>{ct.statut}</Badge>}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -725,6 +882,69 @@ export const BtpChantiersView = () => {
                       </div>
                     </form>
                   )}
+                </div>
+              </div>
+
+              {/* ---- DEPENSES ET ACHATS (CORE) ---- */}
+              <div className="card p-6 border-l-4 border-l-rose-500">
+                <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-slate-700 mb-4 flex items-center gap-2">
+                  <Wallet size={15} className="text-rose-500" /> Dépenses & Achats (Core)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-slate-500 mb-2">Historique des décaissements réels affectés au chantier.</p>
+                    {expenses.filter(e => e.chantier_id === selectedChantier.id).map(e => (
+                      <div key={e.id} className="p-3 border border-slate-200 rounded-md bg-white flex justify-between items-center text-[12px]">
+                        <div>
+                          <p className="font-semibold text-slate-800">{e.description}</p>
+                          <p className="text-slate-500">{new Date(e.date).toLocaleDateString('fr-FR')} • {e.category}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold font-mono text-rose-600">{fmt(e.amountTTC)}</p>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${e.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : e.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{e.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {expenses.filter(e => e.chantier_id === selectedChantier.id).length === 0 && (
+                      <p className="text-[12px] text-slate-400 italic">Aucune dépense comptable enregistrée.</p>
+                    )}
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <p className="text-[12px] font-semibold text-slate-700 mb-3">Nouvelle Dépense Chantier</p>
+                    <form onSubmit={handleAddExpense} className="space-y-3">
+                      <select 
+                        value={newExpense.category} 
+                        onChange={e => setNewExpense({...newExpense, category: e.target.value})}
+                        className="w-full p-2 border border-slate-200 rounded-md text-[12px]"
+                      >
+                        <option value="ACHAT_MARCHANDISE">Achat Matériaux/Marchandises</option>
+                        <option value="PRESTATION_SERVICE">Sous-traitance / Prestation</option>
+                        <option value="TRANSPORT">Transport & Déplacement</option>
+                        <option value="ENTRETIEN">Entretien / Carburant</option>
+                        <option value="AUTRE">Autre Imprévu</option>
+                      </select>
+                      <input 
+                        type="text" 
+                        value={newExpense.description}
+                        onChange={e => setNewExpense({...newExpense, description: e.target.value})}
+                        placeholder="Description (ex: Achat ciment chez X)" 
+                        className="w-full p-2 border border-slate-200 rounded-md text-[12px]"
+                        required 
+                      />
+                      <div className="flex gap-2 items-center">
+                        <input 
+                          type="number" 
+                          value={newExpense.amountHT || ''}
+                          onChange={e => setNewExpense({...newExpense, amountHT: Number(e.target.value)})}
+                          placeholder="Montant HT (GNF)" 
+                          className="flex-1 p-2 border border-slate-200 rounded-md text-[12px] font-mono"
+                          required 
+                        />
+                        <button type="submit" className="bg-rose-600 text-white px-3 py-2 rounded-md font-semibold text-[12px] hover:bg-rose-700">Valider</button>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">La dépense remontera automatiquement à la comptabilité globale (Core) pour validation.</p>
+                    </form>
+                  </div>
                 </div>
               </div>
 
@@ -767,6 +987,48 @@ export const BtpChantiersView = () => {
                 </div>
               </div>
 
+              {/* ---- Réserves à la réception ---- */}
+              {['réception_provisoire', 'réception_définitive'].includes(selectedChantier.statut) && (
+                <div className="card p-6 mt-6">
+                  <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-slate-700 mb-4 flex items-center gap-2">
+                    <AlertTriangle size={15} className="text-amber-500" /> Réserves à la réception
+                  </h3>
+                  <div className="space-y-3">
+                    {btpReserves.filter(r => r.chantier_id === selectedChantier.id).map(r => (
+                      <div key={r.id} className={`p-3 rounded-lg border ${r.statut === 'levee' ? 'border-emerald-200 bg-emerald-50/30' : 'border-amber-200 bg-amber-50/30'} flex items-center justify-between gap-4`}>
+                        <div>
+                          <p className={`text-[12.5px] font-semibold ${r.statut === 'levee' ? 'text-emerald-800' : 'text-amber-800'}`}>{r.description}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">Émise le {new Date(r.date_emission).toLocaleDateString('fr-FR')} {r.date_levee && `• Levée le ${new Date(r.date_levee).toLocaleDateString('fr-FR')}`}</p>
+                        </div>
+                        {r.statut === 'en_cours' ? (
+                          <button onClick={() => handleLeverReserve(r.id)} className="btn btn-dark !py-1 !px-2.5 !text-[11px]">
+                            Lever la réserve
+                          </button>
+                        ) : (
+                          <Badge tone="success">Levée</Badge>
+                        )}
+                      </div>
+                    ))}
+                    {btpReserves.filter(r => r.chantier_id === selectedChantier.id).length === 0 && (
+                      <p className="text-[12px] text-slate-400">Aucune réserve enregistrée pour ce chantier.</p>
+                    )}
+                  </div>
+                  
+                  {(currentRole === 'GERANT' || currentRole === 'COND_TRAVAUX') && (
+                    <form onSubmit={handleAddReserve} className="mt-4 flex gap-2">
+                      <input 
+                        className="input flex-1 !text-[12px]" 
+                        placeholder="Description de la nouvelle réserve (ex: Traces de peinture sur la plinthe...)"
+                        value={newReserve.description}
+                        onChange={e => setNewReserve({ description: e.target.value })}
+                        required
+                      />
+                      <button type="submit" className="btn btn-ghost !text-[12px]">Ajouter une réserve</button>
+                    </form>
+                  )}
+                </div>
+              )}
+
             </div>
           ) : (
             <div className="card h-64 flex items-center justify-center text-slate-400 text-sm">
@@ -775,6 +1037,82 @@ export const BtpChantiersView = () => {
           )}
         </div>
       </div>
+
+      {showOffreModal && selectedChantier?.offre_id && (
+        <Modal title="Détail du Devis Initial" onClose={() => setShowOffreModal(false)} size="lg">
+          <div className="space-y-4">
+            {(() => {
+              const offre = btpOffres.find(o => o.id === selectedChantier.offre_id);
+              if (!offre) return <p className="text-sm text-slate-500">Devis introuvable.</p>;
+              let chiffrage = null;
+              try { if(offre.chiffrage_json) chiffrage = JSON.parse(offre.chiffrage_json); } catch(e){}
+              
+              if(!chiffrage || !chiffrage.lignes) return <p className="text-sm text-slate-500">Aucun chiffrage détaillé disponible.</p>;
+
+              // Group by Phase
+              const grouped: Record<string, any[]> = {};
+              chiffrage.lignes.forEach((l: any) => {
+                const p = l.phase || 'Général';
+                if(!grouped[p]) grouped[p] = [];
+                grouped[p].push(l);
+              });
+
+              return (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-end border-b border-slate-100 pb-3">
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Client</p>
+                      <p className="font-semibold text-slate-800">{offre.client}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Montant Total Estimé</p>
+                      <p className="font-bold text-indigo-700 text-lg font-mono">{fmt(offre.montant_estime)} GNF</p>
+                    </div>
+                  </div>
+
+                  {Object.entries(grouped).map(([phaseName, lines]) => (
+                    <div key={phaseName} className="space-y-2">
+                      <h4 className="text-[13px] font-bold text-slate-800 bg-slate-50 px-3 py-1.5 rounded-md border border-slate-200">
+                        Phase : {phaseName}
+                      </h4>
+                      <div className="overflow-hidden rounded-lg border border-slate-100">
+                        <table className="table-premium w-full text-[11.5px]">
+                          <thead>
+                            <tr>
+                              <th className="text-left w-1/4">Famille</th>
+                              <th className="text-left w-1/3">Désignation</th>
+                              <th className="text-right">Qté</th>
+                              <th className="text-right">PU (GNF)</th>
+                              <th className="text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lines.map((l, i) => (
+                              <tr key={i}>
+                                <td>{FAMILLES_LABEL[l.famille] || l.famille}</td>
+                                <td className="font-medium text-slate-700">{l.designation}</td>
+                                <td className="text-right font-mono">{l.quantite}</td>
+                                <td className="text-right font-mono text-slate-500">{fmt(l.pu)}</td>
+                                <td className="text-right font-mono font-semibold text-slate-800">{fmt(l.quantite * l.pu)}</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-slate-50">
+                              <td colSpan={4} className="text-right font-bold text-slate-600">Total Phase</td>
+                              <td className="text-right font-mono font-bold text-indigo-700">
+                                {fmt(lines.reduce((acc, l) => acc + (l.quantite * l.pu), 0))}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

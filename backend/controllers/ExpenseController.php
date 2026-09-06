@@ -14,11 +14,12 @@ use App\core\Sanitizer;
  */
 class ExpenseController {
 
-    private const ROLES_FINANCE = ['GERANT', 'COMPTABLE'];
+    // FINANCE + rôles chantier (dépenses directement depuis le pilotage BTP)
+    private const EXPENSE_ROLES = ['GERANT', 'COMPTABLE', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'RESP_MATERIEL'];
     private const STATUSES = ['PENDING', 'PAID', 'REJECTED'];
 
     public function create(Request $request) {
-        AuthMiddleware::authorize($request, ...self::ROLES_FINANCE);
+        AuthMiddleware::authorize($request, ...self::EXPENSE_ROLES);
         $body = $request->getBody();
 
         $amountTTC = Sanitizer::float($body['amountTTC'] ?? 0);
@@ -30,7 +31,9 @@ class ExpenseController {
             'id' => Database::generateId(),
             'category' => Sanitizer::pick($body['category'] ?? 'AUTRE', [
                 'ACHAT_MARCHANDISE', 'SALAIRE', 'CHARGES_SOCIALES', 'LOYER',
-                'ELECTRICITE', 'INTERNET', 'IMPOTS', 'FOURNITURES', 'AUTRE'
+                'ELECTRICITE', 'INTERNET', 'IMPOTS', 'FOURNITURES',
+                'PRESTATION_SERVICE', 'TRANSPORT', 'ENTRETIEN', 'CARBURANT',
+                'AUTRE'
             ]) ?? 'AUTRE',
             'amountHT' => max(0, Sanitizer::float($body['amountHT'] ?? 0)),
             'tvaAmount' => max(0, Sanitizer::float($body['tvaAmount'] ?? 0)),
@@ -50,7 +53,7 @@ class ExpenseController {
     }
 
     public function update(Request $request, $id) {
-        AuthMiddleware::authorize($request, ...self::ROLES_FINANCE);
+        AuthMiddleware::authorize($request, ...self::EXPENSE_ROLES);
         $body = $request->getBody();
 
         $status = Sanitizer::pick($body['status'] ?? '', self::STATUSES);
@@ -79,7 +82,7 @@ class ExpenseController {
     }
 
     public function delete(Request $request, $id) {
-        AuthMiddleware::authorize($request, ...self::ROLES_FINANCE);
+        AuthMiddleware::authorize($request, ...self::EXPENSE_ROLES);
         $deleted = Database::getInstance()->deleteTableItem('expenses', 'id', $id);
         if (!$deleted) {
             Response::json(['error' => 'Dépense non trouvée.'], 404);

@@ -28,6 +28,7 @@ class ProjectController {
             'name' => Sanitizer::text($body['name'] ?? 'Nouveau Dossier', 250),
             'clientName' => Sanitizer::text($body['clientName'] ?? 'Non défini', 250),
             'clientContact' => Sanitizer::text($body['clientContact'] ?? '', 300),
+            'prospectId' => Sanitizer::text($body['prospectId'] ?? '', 64),
             'description' => Sanitizer::multiline($body['description'] ?? '', 20000),
             'budget' => max(0, Sanitizer::float($body['budget'] ?? 0)),
             'status' => $status,

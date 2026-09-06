@@ -51,9 +51,10 @@ class DataController {
 
         $projects = array_values($db->getTable('projects'));
         $prospects = array_values($db->getTable('prospects'));
+        $catalogue = array_values($db->getTable('catalogue'));
+        $proposals = array_values($db->getTable('proposals'));
+        $devisRecords = array_values($db->getTable('devisRecords'));
 
-        // Fusion : table legacy 'companyConfig' (seed) + table 'config' (updates live),
-        // puis filtrage par liste blanche.
         $companyConfig = self::sanitizeConfig(array_merge(
             $db->getTable('companyConfig') ?: [],
             $db->getTable('config') ?: []
@@ -63,22 +64,92 @@ class DataController {
         $expenses = [];
         $treasuryAccounts = [];
         $transactions = [];
+        
+        $accountingAccounts = [];
+        $accountingJournals = [];
+        $accountingEntries = [];
+        $assets = [];
+
         if (in_array($role, ['GERANT', 'COMPTABLE'], true)) {
             $expenses = array_values($db->getTable('expenses'));
             $treasuryAccounts = array_values($db->getTable('treasury_accounts'));
             $transactions = array_values($db->getTable('transactions'));
+            
+            // --- SEEDING SYSCOHADA (Si vide) ---
+            $accountingAccounts = array_values($db->getTable('accountingAccounts'));
+            $accountingJournals = array_values($db->getTable('accountingJournals'));
+            
+            if (empty($accountingJournals)) {
+                $defaultJournals = [
+                    ['id' => 'JRN-01', 'code' => 'VT', 'name' => 'Journal des Ventes', 'type' => 'SALES'],
+                    ['id' => 'JRN-02', 'code' => 'AC', 'name' => 'Journal des Achats', 'type' => 'PURCHASES'],
+                    ['id' => 'JRN-03', 'code' => 'BQ', 'name' => 'Journal de Banque', 'type' => 'BANK'],
+                    ['id' => 'JRN-04', 'code' => 'CA', 'name' => 'Journal de Caisse', 'type' => 'CASH'],
+                    ['id' => 'JRN-05', 'code' => 'OD', 'name' => 'Opérations Diverses', 'type' => 'GENERAL']
+                ];
+                foreach ($defaultJournals as $j) $db->create('accountingJournals', $j);
+                $accountingJournals = array_values($db->getTable('accountingJournals'));
+            }
+
+            if (empty($accountingAccounts)) {
+                $defaultAccounts = [
+                    ['id' => 'ACC-10', 'accountNumber' => '101', 'name' => 'Capital social', 'class' => 1],
+                    ['id' => 'ACC-16', 'accountNumber' => '162', 'name' => 'Emprunts bancaires', 'class' => 1],
+                    ['id' => 'ACC-21', 'accountNumber' => '213', 'name' => 'Bâtiments', 'class' => 2],
+                    ['id' => 'ACC-24', 'accountNumber' => '241', 'name' => 'Matériel et outillage', 'class' => 2],
+                    ['id' => 'ACC-244', 'accountNumber' => '244', 'name' => 'Matériel de transport', 'class' => 2],
+                    ['id' => 'ACC-31', 'accountNumber' => '311', 'name' => 'Marchandises', 'class' => 3],
+                    ['id' => 'ACC-40', 'accountNumber' => '401', 'name' => 'Fournisseurs', 'class' => 4],
+                    ['id' => 'ACC-41', 'accountNumber' => '411', 'name' => 'Clients', 'class' => 4],
+                    ['id' => 'ACC-42', 'accountNumber' => '422', 'name' => 'Personnel - Rémunérations dues', 'class' => 4],
+                    ['id' => 'ACC-43', 'accountNumber' => '431', 'name' => 'Sécurité sociale', 'class' => 4],
+                    ['id' => 'ACC-44', 'accountNumber' => '443', 'name' => 'État - TVA facturée', 'class' => 4],
+                    ['id' => 'ACC-445', 'accountNumber' => '445', 'name' => 'État - TVA récupérable', 'class' => 4],
+                    ['id' => 'ACC-52', 'accountNumber' => '521', 'name' => 'Banque locale', 'class' => 5],
+                    ['id' => 'ACC-57', 'accountNumber' => '571', 'name' => 'Caisse', 'class' => 5],
+                    ['id' => 'ACC-60', 'accountNumber' => '601', 'name' => 'Achats de marchandises', 'class' => 6],
+                    ['id' => 'ACC-61', 'accountNumber' => '613', 'name' => 'Locations', 'class' => 6],
+                    ['id' => 'ACC-66', 'accountNumber' => '661', 'name' => 'Rémunérations du personnel', 'class' => 6],
+                    ['id' => 'ACC-70', 'accountNumber' => '701', 'name' => 'Ventes de marchandises', 'class' => 7],
+                    ['id' => 'ACC-706', 'accountNumber' => '706', 'name' => 'Prestations de services', 'class' => 7]
+                ];
+                foreach ($defaultAccounts as $a) $db->create('accountingAccounts', $a);
+                $accountingAccounts = array_values($db->getTable('accountingAccounts'));
+            }
+
+            $accountingEntries = array_values($db->getTable('accountingEntries'));
+            $assets = array_values($db->getTable('assets'));
         }
 
-        // --- RH : GERANT / RH uniquement (données personnelles + salaires) ---
+        // --- RH : GERANT / RH = Tout, Autres = Uniquement leurs données (Self-Service) ---
         $employees = [];
         $contracts = [];
         $leaveRequests = [];
         $payslips = [];
+        
+        $allEmployees = array_values($db->getTable('employees'));
+        
         if (in_array($role, ['GERANT', 'RH'], true)) {
-            $employees = array_values($db->getTable('employees'));
+            $employees = $allEmployees;
             $contracts = array_values($db->getTable('contracts'));
             $leaveRequests = array_values($db->getTable('leave_requests'));
             $payslips = array_values($db->getTable('payslips'));
+        } else {
+            // Self-Service : on trouve l'employé correspondant au user
+            $myEmployeeId = null;
+            foreach ($allEmployees as $emp) {
+                if (($emp['userId'] ?? '') === $userId) {
+                    $myEmployeeId = $emp['id'];
+                    $employees[] = $emp;
+                    break;
+                }
+            }
+            
+            if ($myEmployeeId) {
+                $contracts = array_values(array_filter($db->getTable('contracts'), function($c) use ($myEmployeeId) { return ($c['employeeId'] ?? '') === $myEmployeeId; }));
+                $leaveRequests = array_values(array_filter($db->getTable('leave_requests'), function($lr) use ($myEmployeeId) { return ($lr['employeeId'] ?? '') === $myEmployeeId; }));
+                $payslips = array_values(array_filter($db->getTable('payslips'), function($ps) use ($myEmployeeId) { return ($ps['employeeId'] ?? '') === $myEmployeeId; }));
+            }
         }
 
         // --- Messagerie : uniquement les messages qui me concernent ---
@@ -115,6 +186,9 @@ class DataController {
         Response::json([
             'projects' => $projects,
             'prospects' => $prospects,
+            'catalogue' => $catalogue,
+            'proposals' => $proposals,
+            'devisRecords' => $devisRecords,
             'companyConfig' => $companyConfig,
             'expenses' => $expenses,
             'internal_messages' => $internalMessages,
@@ -126,6 +200,12 @@ class DataController {
             'transactions' => $transactions,
             'tasks' => $tasks,
             'notifications' => $notifications,
+
+            // SYSCOHADA
+            'accountingAccounts' => $accountingAccounts,
+            'accountingJournals' => $accountingJournals,
+            'accountingEntries' => $accountingEntries,
+            'assets' => $assets,
 
             // Module BTP
             'btpOffres' => array_values($db->getTable('btpOffres')),
@@ -148,6 +228,8 @@ class DataController {
             'btpInspections' => array_values($db->getTable('btpInspections')),
             'btpPrixUnitaires' => array_values($db->getTable('btpPrixUnitaires')),
             'btpHeuresEngins' => array_values($db->getTable('btpHeuresEngins')),
+            'btpReserves' => array_values($db->getTable('btpReserves')),
+            'btpHabilitations' => array_values($db->getTable('btpHabilitations')),
             // Agrégats financiers par chantier (les dépenses brutes restent
             // réservées GERANT/COMPTABLE — ici seuls les totaux partent).
             'btpChantierStats' => self::computeChantierStats($db),
@@ -166,7 +248,11 @@ class DataController {
 
             // Module Assistante
             'agendaEvents' => array_values($db->getTable('agendaEvents')),
-            'devisRecords' => array_values($db->getTable('devisRecords')),
+            'assistantTasks' => array_values($db->getTable('assistantTasks')),
+            'assistantMeetings' => array_values($db->getTable('assistantMeetings')),
+            'assistantDocuments' => array_values($db->getTable('assistantDocuments')),
+            'assistantContacts' => array_values($db->getTable('assistantContacts')),
+            'assistantTravels' => array_values($db->getTable('assistantTravels')),
         ]);
     }
 

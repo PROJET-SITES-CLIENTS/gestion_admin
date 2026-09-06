@@ -74,9 +74,13 @@ class ProspectController {
 
         $out = [
             'name' => Sanitizer::text($body['name'] ?? '', 200),
+            'company' => Sanitizer::text($body['company'] ?? '', 200),
+            'jobTitle' => Sanitizer::text($body['jobTitle'] ?? '', 100),
             'phone' => Sanitizer::text($body['phone'] ?? '', 40),
             'email' => Sanitizer::text($body['email'] ?? '', 190),
             'source' => Sanitizer::text($body['source'] ?? '', 100),
+            'ownerId' => Sanitizer::text($body['ownerId'] ?? '', 64),
+            'probability' => isset($body['probability']) ? (int) $body['probability'] : null,
             'stage' => $stage ?? 'NOUVEAU',
             'qualification' => $qualification ?? 'NON_QUALIFIE',
             'projectType' => Sanitizer::text($body['projectType'] ?? '', 200),
@@ -84,10 +88,12 @@ class ProspectController {
             'objectives' => Sanitizer::multiline($body['objectives'] ?? '', 5000),
             'nextActionDate' => Sanitizer::date($body['nextActionDate'] ?? '') ?? '',
             'lossReason' => Sanitizer::text($body['lossReason'] ?? '', 1000),
+            'lossReasonDetail' => Sanitizer::multiline($body['lossReasonDetail'] ?? '', 5000),
         ];
-        $out = array_filter($out, static fn($v) => $v !== '');
+        // Enlever les null, mais garder les tableaux ou autres (array_filter enlève les '' et null)
+        $out = array_filter($out, static fn($v) => $v !== '' && $v !== null);
 
-        foreach (['interactions', 'meetings', 'history', 'documents'] as $arrayField) {
+        foreach (['tags', 'interactions', 'meetings', 'history', 'documents'] as $arrayField) {
             if (isset($body[$arrayField]) && is_array($body[$arrayField])) {
                 $out[$arrayField] = Sanitizer::deepText($body[$arrayField], 3000);
             }

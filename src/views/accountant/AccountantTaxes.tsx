@@ -3,23 +3,31 @@ import { useApp } from '../../store';
 import { Receipt, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 
 export function AccountantTaxes() {
-  const { expenses, transactions, companyConfig } = useApp();
+  const { accountingEntries, accountingAccounts, companyConfig } = useApp();
 
   const tvaRate = companyConfig.tvaRate || 18;
 
-  // TVA Collectée (sur les ventes)
-  // On simplifie en prenant toutes les transactions CREDIT qui ne sont pas des virements internes.
-  // Dans un vrai ERP, on lierait la TVA à la facture. Ici, on simule que tout encaissement client = TTC.
-  const ventesTTC = transactions.filter(t => t.type === 'CREDIT' && t.category !== 'TRANSFERT').reduce((acc, t) => acc + t.amount, 0);
-  const ventesHT = ventesTTC / (1 + (tvaRate / 100));
-  const tvaCollectee = ventesTTC - ventesHT;
+  // TVA Collectée (sur les ventes) : Compte 443 (Crédit)
+  const tvaCollecteeAcc = accountingAccounts.find(a => a.accountNumber.startsWith('443'));
+  const tvaCollectee = !tvaCollecteeAcc ? 0 : accountingEntries
+    .filter(e => e.status === 'VALIDATED')
+    .flatMap(e => e.lines)
+    .filter(l => l.accountId === tvaCollecteeAcc.id)
+    .reduce((acc, l) => acc + ((l.credit || 0) - (l.debit || 0)), 0);
 
-  // TVA Déductible (sur les achats)
-  // On prend toutes les dépenses qui ont une tvaAmount.
-  const tvaDeductible = expenses.filter(e => e.status === 'PAID').reduce((acc, e) => acc + (e.tvaAmount || 0), 0);
+  // TVA Déductible (sur les achats) : Compte 445 (Débit)
+  const tvaDeductibleAcc = accountingAccounts.find(a => a.accountNumber.startsWith('445'));
+  const tvaDeductible = !tvaDeductibleAcc ? 0 : accountingEntries
+    .filter(e => e.status === 'VALIDATED')
+    .flatMap(e => e.lines)
+    .filter(l => l.accountId === tvaDeductibleAcc.id)
+    .reduce((acc, l) => acc + ((l.debit || 0) - (l.credit || 0)), 0);
 
   // TVA Nette à payer
   const tvaNette = tvaCollectee - tvaDeductible;
+
+  // Calcul factice pour affichage HT (rétrocalculé depuis la TVA pour le visuel)
+  const ventesTTC = tvaCollectee > 0 ? (tvaCollectee / (tvaRate / 100)) * (1 + (tvaRate / 100)) : 0;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -37,7 +45,7 @@ export function AccountantTaxes() {
             <h3 className="text-sm font-bold text-slate-700">TVA Collectée (Ventes)</h3>
           </div>
           <p className="text-2xl font-bold text-slate-900 font-mono mt-4">{tvaCollectee.toLocaleString(undefined, {maximumFractionDigits:0})} <span className="text-sm">GNF</span></p>
-          <p className="text-xs text-slate-500 mt-1">Sur {ventesTTC.toLocaleString()} GNF d'encaissements TTC</p>
+          <p className="text-xs text-slate-500 mt-1">D'après les écritures validées du compte 443</p>
         </div>
 
         <div className="bg-white border border-slate-200 p-6 rounded-sm shadow-sm">
@@ -48,7 +56,7 @@ export function AccountantTaxes() {
             <h3 className="text-sm font-bold text-slate-700">TVA Déductible (Achats)</h3>
           </div>
           <p className="text-2xl font-bold text-slate-900 font-mono mt-4">{tvaDeductible.toLocaleString(undefined, {maximumFractionDigits:0})} <span className="text-sm">GNF</span></p>
-          <p className="text-xs text-slate-500 mt-1">Sur factures fournisseurs réglées</p>
+          <p className="text-xs text-slate-500 mt-1">D'après les écritures validées du compte 445</p>
         </div>
 
         <div className={`p-6 rounded-sm shadow-sm flex flex-col justify-center ${tvaNette > 0 ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>

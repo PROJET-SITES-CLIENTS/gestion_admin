@@ -114,7 +114,7 @@ class RhController {
         $body = $request->getBody();
 
         $employeeId = Sanitizer::text($body['employeeId'] ?? '', 64);
-        $type = Sanitizer::pick($body['type'] ?? '', ['CDI', 'CDD', 'STAGIAIRE', 'APPRENTI']) ?? 'CDD';
+        $type = Sanitizer::pick($body['type'] ?? '', ['CDI', 'CDD', 'STAGIAIRE', 'APPRENTI', 'FREELANCE']) ?? 'CDD';
         $startDate = Sanitizer::date($body['startDate'] ?? '');
         if ($employeeId === '' || $startDate === null) {
             Response::json(['error' => 'Employé et date de début obligatoires.'], 400);
@@ -140,12 +140,28 @@ class RhController {
     // Congés
     // ------------------------------------------------------------------
     public function createLeaveRequest(Request $request) {
-        // Cohérence avec la visibilité des données (GET /api/data ne renvoie
-        // les congés qu'aux rôles GERANT/RH) : la création est réservée aux mêmes rôles.
-        AuthMiddleware::authorize($request, ...self::ROLES_RH);
+        $user = AuthMiddleware::authenticate($request);
         $body = $request->getBody();
-
         $employeeId = Sanitizer::text($body['employeeId'] ?? '', 64);
+        
+        $role = $user['role'] ?? '';
+        $isRhOrGerant = in_array($role, ['GERANT', 'RH'], true);
+        
+        if (!$isRhOrGerant) {
+            $db = Database::getInstance();
+            $allEmployees = array_values($db->getTable('employees'));
+            $myEmployeeId = null;
+            foreach ($allEmployees as $emp) {
+                if (($emp['userId'] ?? '') === ($user['id'] ?? '')) {
+                    $myEmployeeId = $emp['id'];
+                    break;
+                }
+            }
+            if ($myEmployeeId !== $employeeId) {
+                Response::json(['error' => 'Non autorisé à demander un congé pour un autre employé.'], 403);
+            }
+        }
+
         $startDate = Sanitizer::date($body['startDate'] ?? '');
         $endDate = Sanitizer::date($body['endDate'] ?? '');
         if ($employeeId === '' || $startDate === null || $endDate === null) {
@@ -158,7 +174,7 @@ class RhController {
             'startDate' => $startDate,
             'endDate' => $endDate,
             'daysCount' => max(0, Sanitizer::int($body['daysCount'] ?? 0)),
-            'leaveType' => Sanitizer::pick($body['leaveType'] ?? 'ANNUAL', ['ANNUAL', 'SICK', 'MATERNITY', 'UNPAID']) ?? 'ANNUAL',
+            'leaveType' => Sanitizer::pick($body['leaveType'] ?? 'ANNUAL', ['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'RTT', 'EXCEPTIONAL']) ?? 'ANNUAL',
             'reason' => Sanitizer::multiline($body['reason'] ?? '', 2000),
             'status' => 'PENDING',
             'createdAt' => date('c'),

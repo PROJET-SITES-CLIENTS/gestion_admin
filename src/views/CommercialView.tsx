@@ -6,6 +6,8 @@ import { ProjectDetails } from '../components/ProjectDetails';
 import { useProjectFilter } from '../hooks/useProjectFilter';
 import { ProjectFilterBar } from '../components/ProjectFilterBar';
 import { ProspectionCRM } from '../components/ProspectionCRM';
+import { CommercialProposals } from '../components/CommercialProposals';
+import { CommercialReporting } from '../components/CommercialReporting';
 
 export const CommercialProjectCard: React.FC<{ project: Project, onViewDetails: (p: Project) => void }> = ({ project: p, onViewDetails }) => {
   return (
@@ -70,7 +72,8 @@ export default function CommercialView() {
     }
   }, [projects]);
 
-  const [activeTab, setActiveTab] = useState<'CRM' | 'PROJETS'>('CRM');
+  const [activeTab, setActiveTab] = useState<'CRM' | 'PROJETS' | 'PROPOSITIONS' | 'REPORTING'>('CRM');
+  const { currentRole } = useApp();
 
   const handleAddProject = (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,9 +90,9 @@ export default function CommercialView() {
             <span className="font-serif italic font-normal text-indigo-600 mr-1.5">L'espace</span>
             commercial
           </h1>
-          <p className="text-[13px] text-slate-500 mt-1">Prospects, projets et suivi des paiements.</p>
+          <p className="text-[13px] text-slate-500 mt-1">Prospects, catalogue de services et pilotage.</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-sm">
+        <div className="flex flex-wrap bg-slate-100 p-1 rounded-sm gap-1">
           <button 
             onClick={() => setActiveTab('CRM')}
             className={`px-4 py-2 text-sm font-medium rounded-sm transition-all ${activeTab === 'CRM' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
@@ -97,16 +100,32 @@ export default function CommercialView() {
             Prospection CRM
           </button>
           <button 
+            onClick={() => setActiveTab('PROPOSITIONS')}
+            className={`px-4 py-2 text-sm font-medium rounded-sm transition-all ${activeTab === 'PROPOSITIONS' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Propositions
+          </button>
+          <button 
             onClick={() => setActiveTab('PROJETS')}
             className={`px-4 py-2 text-sm font-medium rounded-sm transition-all ${activeTab === 'PROJETS' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            Projets Actifs
+            Projets Gagnés
+          </button>
+          <button 
+            onClick={() => setActiveTab('REPORTING')}
+            className={`px-4 py-2 text-sm font-medium rounded-sm transition-all ${activeTab === 'REPORTING' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {currentRole === 'GERANT' ? 'Pilotage Manager' : 'Mes Performances'}
           </button>
         </div>
       </div>
 
       {activeTab === 'CRM' ? (
         <ProspectionCRM />
+      ) : activeTab === 'PROPOSITIONS' ? (
+        <CommercialProposals />
+      ) : activeTab === 'REPORTING' ? (
+        <CommercialReporting />
       ) : (
         <div className="space-y-6">
           <div className="bg-white p-5 rounded-sm shadow-none border border-slate-200">

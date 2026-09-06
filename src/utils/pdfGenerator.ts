@@ -200,6 +200,113 @@ const generateEditorialCover = (typeMain: string, typeSub: string, clientName: s
   };
 };
 
+export const generateCommercialProposalPDF = async (proposal: any, prospect: any, catalogue: any[], companyConfig: CompanyConfig) => {
+  const clientName = cleanText(prospect?.name || 'CLIENT');
+  const companyStr = prospect?.company ? ` - ${cleanText(prospect.company)}` : '';
+  const ref = `DEV-${proposal.id.slice(0, 8).toUpperCase()}`;
+  const dateStr = formatDate(proposal.createdAt || new Date().toISOString());
+  const validUntilStr = formatDate(proposal.validUntil);
+  
+  const itemsBody = proposal.items.map((item: any) => {
+    const catItem = catalogue.find(c => c.id === item.catalogItemId);
+    const lineTotal = item.quantity * item.unitPrice * (1 - (item.discount || 0) / 100);
+    return [
+      { text: catItem?.name || 'Service', fontSize: 9, color: COLORS.TEXT_MAIN },
+      { text: item.quantity.toString(), fontSize: 9, alignment: 'center' },
+      { text: formatGNF(item.unitPrice).replace(' GNF', ''), fontSize: 9, alignment: 'right' },
+      { text: item.discount ? `${item.discount}%` : '-', fontSize: 9, alignment: 'center' },
+      { text: formatGNF(lineTotal).replace(' GNF', ''), fontSize: 9, alignment: 'right' }
+    ];
+  });
+
+  const docDefinition: any = {
+    pageSize: 'A4',
+    pageMargins: [60, 80, 60, 80],
+    background: generateBackground(),
+    header: getStandardHeader('PROPOSITION COMMERCIALE', proposal.title),
+    footer: getStandardFooter(companyConfig),
+    content: [
+      generateEditorialCover('PROPOSITION', 'COMMERCIALE', `${clientName}${companyStr}`, ref, dateStr, companyConfig),
+      
+      {
+        columns: [
+          {
+            width: '50%',
+            stack: [
+              { text: 'ÉMETTEUR', fontSize: 7, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 15] },
+              { text: cleanText(companyConfig?.companyName || 'ENTREPRISE').toUpperCase(), fontSize: 12, color: COLORS.TEXT_MAIN, characterSpacing: 1, margin: [0, 0, 0, 8] },
+              { text: cleanText(companyConfig?.companyAddress || 'Conakry, République de Guinée').split(', ').join('\n'), fontSize: 9, color: COLORS.TEXT_MUTED, lineHeight: 1.5, margin: [0, 0, 0, 8] },
+              { text: `Tél : ${cleanText(companyConfig?.companyPhone || '+224 000 00 00 00')}`, fontSize: 9, color: COLORS.TEXT_MUTED }
+            ]
+          },
+          {
+            width: '50%',
+            stack: [
+              { text: 'DESTINATAIRE', fontSize: 7, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 15] },
+              { text: clientName.toUpperCase(), fontSize: 12, color: COLORS.TEXT_MAIN, characterSpacing: 1, margin: [0, 0, 0, 8] },
+              { text: cleanText(prospect?.company || ''), fontSize: 10, color: COLORS.TEXT_MUTED, margin: [0, 0, 0, 4] },
+              { text: `Tél : ${cleanText(prospect?.phone || '')}`, fontSize: 9, color: COLORS.TEXT_MUTED }
+            ]
+          }
+        ],
+        margin: [0, 0, 0, 40]
+      },
+
+      { text: 'DÉTAIL DE LA PROPOSITION', fontSize: 14, color: COLORS.GOLD, bold: true, characterSpacing: 2, margin: [0, 0, 0, 20] },
+      
+      {
+        table: {
+          headerRows: 1,
+          widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+          body: [
+            [
+              { text: 'DESCRIPTION', fontSize: 7, color: COLORS.GOLD, characterSpacing: 2 },
+              { text: 'QTÉ', fontSize: 7, color: COLORS.GOLD, characterSpacing: 2, alignment: 'center' },
+              { text: 'P.U (GNF)', fontSize: 7, color: COLORS.GOLD, characterSpacing: 2, alignment: 'right' },
+              { text: 'REM', fontSize: 7, color: COLORS.GOLD, characterSpacing: 2, alignment: 'center' },
+              { text: 'TOTAL HT', fontSize: 7, color: COLORS.GOLD, characterSpacing: 2, alignment: 'right' }
+            ],
+            ...itemsBody
+          ]
+        },
+        layout: 'lightHorizontalLines',
+        margin: [0, 0, 0, 20]
+      },
+
+      {
+        columns: [
+          { width: '*', text: '' },
+          {
+            width: 250,
+            stack: [
+              {
+                columns: [
+                  { text: 'TOTAL TTC', fontSize: 10, color: COLORS.GOLD, characterSpacing: 2, bold: true },
+                  { text: formatGNF(proposal.totalAmount), fontSize: 12, color: COLORS.GOLD, alignment: 'right', bold: true }
+                ]
+              },
+              { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 1, lineColor: COLORS.GOLD }], margin: [0, 5, 0, 15] },
+            ]
+          }
+        ],
+        margin: [0, 10, 0, 40]
+      },
+
+      {
+        stack: [
+          { text: 'VALIDITÉ DE L\'OFFRE', fontSize: 7, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 10] },
+          { text: `Cette proposition commerciale est valable jusqu'au ${validUntilStr}.`, fontSize: 9, color: COLORS.TEXT_MAIN, margin: [0, 0, 0, 8] },
+          { text: 'Signature pour accord :', fontSize: 9, color: COLORS.TEXT_MUTED, margin: [0, 20, 0, 0] }
+        ]
+      }
+    ],
+    defaultStyle: { font: 'Roboto' }
+  };
+
+  const filename = `Devis_${ref}_${cleanText(prospect?.company || clientName).replace(/\s+/g, '_')}.pdf`;
+  ensurePdfMake().then(m => m.createPdf(docDefinition)).then(d => d.download(filename));
+};
+
 export const generateProformaPDF = async (project: Project, companyConfig: CompanyConfig) => {
   const { totalAmount } = calculateProjectFinancials(project);
   

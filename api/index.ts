@@ -8,7 +8,20 @@
  *   - Modèle document store : table `documents` (collection, id, data JSONB)
  */
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+// Types Vercel inline (évite la dépendance @vercel/node)
+interface VercelRequest {
+  method?: string;
+  url?: string;
+  headers: Record<string, string | string[] | undefined>;
+  body: any;
+  query?: Record<string, string>;
+}
+interface VercelResponse {
+  status: (code: number) => VercelResponse;
+  json: (data: any) => void;
+  setHeader: (key: string, value: string) => void;
+  end: () => void;
+}
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { neon } from '@neondatabase/serverless';
@@ -94,8 +107,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'einsof_dev_secret';
 const JWT_TTL = (parseInt(process.env.JWT_TTL_HOURS || '12')) * 3600;
 
 const getToken = (req: VercelRequest): string | null => {
-  const auth = req.headers['authorization'];
-  if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
+  const auth = req.headers['authorization'] as string | undefined;
+  if (auth && typeof auth === 'string' && auth.startsWith('Bearer ')) return auth.slice(7);
   return null;
 };
 
@@ -166,6 +179,8 @@ const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any }> = {
   btpInspections: { roles: ['GERANT','QHSE_BTP','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'], defaults: { statut: 'planifiée' } },
   btpPrixUnitaires: { roles: ['GERANT','ETUDES','COMPTABLE','DEVELOPPEUR'] },
   btpHeuresEngins: { roles: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','DEVELOPPEUR'] },
+  btpReserves: { roles: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','COMPTABLE','DEVELOPPEUR'], defaults: { statut: 'ouverte' } },
+  btpHabilitations: { roles: ['GERANT','QHSE_BTP','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'], defaults: { statut: 'valide' } },
   agroLotMatierePremieres: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'], defaults: { statut: 'planifié' } },
   agroLotProductions: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'], defaults: { statut: 'planifié' } },
   agroControles: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'] },
@@ -305,6 +320,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
       for (const t of agroTables) response[t] = allData[t] || [];
       response.btpEmployeeDirectory = (allData.employees || []).map((e: any) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, position: e.position }));
+
+      // btpChantierStats — agrégats P&L calculés côté serveur
+      {
+        const [chantiers, situations, pointages, affectations, mouvements, heuresEngins, engins, sousTraitances, expenses] = await Promise.all([
+          db.getTable('btpChantiers'), db.getTable('btpSituations'),
+          db.getTable('btpPointages'), db.getTable('btpAffectations'),
+          db.getTable('btpMouvements'), db.getTable('btpHeuresEngins'),
+          db.getTable('btpEngins'), db.getTable('btpSousTraitances'),
+          db.getTable('expenses'),
+        ]);
+        const tauxMO: Record<string, number> = {};
+        for (const a of affectations) tauxMO[`${a.employee_id}|${a.chantier_id}`] = Number(a.taux_journalier) || 0;
+        const tauxEngin: Record<string, number> = {};
+        for (const e of engins) tauxEngin[e.id] = Number(e.taux_horaire) || 0;
+
+        response.btpChantierStats = chantiers.map((c: any) => {
+          const s: any = {
+            id: c.id, budget_engage: 0, montant_situations_facturees: 0,
+            montant_situations_attente: 0, cout_mo_reel: 0, heures_pointees: 0,
+            cout_engins: 0, cout_stock_sorti: 0, cout_sous_traitance: 0, retenue_bloquee: 0,
+          };
+          for (const e of expenses) {
+            if ((e.chantier_id || '') !== c.id || e.status === 'REJECTED') continue;
+            s.budget_engage += Number(e.amountTTC) || Number(e.amount) || 0;
+          }
+          for (const sit of situations) {
+            if (sit.chantier_id !== c.id) continue;
+            const m = Number(sit.montant_facture) || 0;
+            if (sit.statut === 'facturée') {
+              s.montant_situations_facturees += m;
+              if (!sit.retenue_liberee) s.retenue_bloquee += Number(sit.retenue_amount) || 0;
+            } else if (sit.statut === 'en_attente_facturation') {
+              s.montant_situations_attente += m;
+            }
+          }
+          for (const p of pointages) {
+            if (p.chantier_id !== c.id) continue;
+            const h = Number(p.heures) || 0;
+            s.heures_pointees += h;
+            s.cout_mo_reel += (h / 8) * (tauxMO[`${p.employee_id}|${c.id}`] || 0);
+          }
+          for (const m of mouvements) {
+            if (m.chantier_id !== c.id || m.type !== 'sortie_chantier') continue;
+            s.cout_stock_sorti += (Number(m.quantite) || 0) * (Number(m.cout_unitaire) || 0);
+          }
+          for (const h of heuresEngins) {
+            if (h.chantier_id !== c.id) continue;
+            s.cout_engins += (Number(h.heures) || 0) * (tauxEngin[h.engin_id] || 0);
+          }
+          for (const st of sousTraitances) {
+            if (st.chantier_id !== c.id || st.statut === 'résiliée') continue;
+            s.cout_sous_traitance += Number(st.montant) || 0;
+          }
+          return s;
+        });
+      }
 
       return res.json(response);
     }
@@ -566,6 +637,297 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const user = requireRole(req, res, 'GERANT'); if (!user) return;
       const ok = await db.delete(param1, param2);
       return res.json({ success: ok });
+    }
+
+    // ============================================================
+    // BTP — OPÉRATIONS ATOMIQUES (multi-tables, transaction logique)
+    // ============================================================
+
+    // --- Facturer une situation → CREDIT trésorerie + notif ---
+    if (route === 'btp' && param1 === 'situations' && param3 === 'facturer' && method === 'POST') {
+      const user = requireRole(req, res, ...FINANCE); if (!user) return;
+      const sitId = param2;
+      const accountId = body.accountId;
+      if (!accountId) return res.status(400).json({ error: 'Compte de trésorerie obligatoire.' });
+
+      const sit = await db.getItem('btpSituations', sitId);
+      if (!sit) return res.status(404).json({ error: 'Situation introuvable.' });
+      if (sit.statut !== 'en_attente_facturation') {
+        return res.status(409).json({ error: `Situation non facturable (statut: ${sit.statut}).` });
+      }
+
+      const montant = Number(sit.montant_facture) || 0;
+      if (montant <= 0) return res.status(400).json({ error: 'Montant invalide.' });
+
+      const accounts = await db.getTable('treasury_accounts');
+      const account = accounts.find((a: any) => a.id === accountId);
+      if (!account) return res.status(400).json({ error: 'Compte introuvable.' });
+
+      const chantiers = await db.getTable('btpChantiers');
+      const chantier = chantiers.find((c: any) => c.id === sit.chantier_id);
+      const chantierNom = chantier?.nom || 'chantier inconnu';
+
+      const retenue = Number(sit.retenue_amount) || 0;
+      const net = montant - retenue;
+      const tva = Number(sit.tva_amount) || 0;
+      const ht = Number(sit.montant_ht) || montant;
+
+      // 1. Situation → facturée
+      await db.update('btpSituations', sitId, {
+        statut: 'facturée',
+        date_facturation: new Date().toISOString(),
+      });
+
+      // 2. Transaction CREDIT du net
+      const tx = {
+        id: genId(), accountId, toAccountId: null, type: 'CREDIT', amount: net,
+        date: new Date().toISOString(), referenceId: sitId, category: 'SITUATION_TRAVAUX',
+        description: `Situation ${sit.periode} — Chantier: ${chantierNom}${tva > 0 ? ` (HT ${ht} + TVA ${tva})` : ''}${retenue > 0 ? ` — RG ${retenue}` : ''}`,
+        isReconciled: false,
+      };
+      await db.insert('transactions', tx);
+
+      // 3. Crédit du solde
+      await db.update('treasury_accounts', accountId, { balance: (account.balance || 0) + net });
+
+      // 4. Notification
+      await db.insert('notifications', {
+        id: genId(), targetRole: 'GERANT',
+        message: `Situation facturée: ${net.toLocaleString('fr-FR')} GNF encaissés sur « ${chantierNom} » (${sit.periode})${retenue > 0 ? ` — RG bloquée: ${retenue.toLocaleString('fr-FR')} GNF` : ''}.`,
+        type: 'SUCCESS', isRead: false, createdAt: new Date().toISOString(),
+      });
+
+      const updatedSit = await db.getItem('btpSituations', sitId);
+      return res.status(201).json({ success: true, situation: updatedSit, transaction: tx, chantier_nom: chantierNom, retenue, net });
+    }
+
+    // --- Valider un avenant → applique budget ± montant + délai + jours ---
+    if (route === 'btp' && param1 === 'avenants' && param3 === 'valider' && method === 'POST') {
+      const user = requireRole(req, res, 'GERANT'); if (!user) return;
+      const avId = param2;
+
+      const av = await db.getItem('btpAvenants', avId);
+      if (!av) return res.status(404).json({ error: 'Avenant introuvable.' });
+      if (av.statut !== 'brouillon') return res.status(409).json({ error: `Avenant déjà traité (${av.statut}).` });
+
+      const chantier = await db.getItem('btpChantiers', av.chantier_id);
+      if (!chantier) return res.status(404).json({ error: 'Chantier introuvable.' });
+
+      const montant = Number(av.montant) || 0;
+      const jours = Number(av.jours_delai) || 0;
+      const type = av.type || 'montant';
+      const chantierUpdates: any = {};
+
+      if (['montant', 'montant_delai'].includes(type) && montant !== 0) {
+        chantierUpdates.budget_initial = (chantier.budget_initial || 0) + montant;
+      }
+      if (['delai', 'montant_delai'].includes(type) && jours > 0) {
+        const fin = chantier.date_fin_prevue ? new Date(chantier.date_fin_prevue) : new Date();
+        fin.setDate(fin.getDate() + jours);
+        chantierUpdates.date_fin_prevue = fin.toISOString().split('T')[0];
+      }
+
+      await db.update('btpChantiers', chantier.id, chantierUpdates);
+      await db.update('btpAvenants', avId, { statut: 'validé' });
+
+      await db.insert('notifications', {
+        id: genId(), targetRole: 'COND_TRAVAUX',
+        message: `Avenant ${avId} validé sur « ${chantier.nom} »${montant !== 0 ? ` : budget ${montant > 0 ? '+' : ''}${montant.toLocaleString('fr-FR')} GNF` : ''}${jours > 0 ? ` délai +${jours}j` : ''}.`,
+        type: 'INFO', isRead: false, createdAt: new Date().toISOString(),
+      });
+
+      const updatedChantier = await db.getItem('btpChantiers', chantier.id);
+      const updatedAv = await db.getItem('btpAvenants', avId);
+      return res.status(201).json({ success: true, avenant: updatedAv, chantier: updatedChantier });
+    }
+
+    // --- Libérer les retenues de garantie (après réception définitive) ---
+    if (route === 'btp' && param1 === 'chantiers' && param3 === 'liberer-retenues' && method === 'POST') {
+      const user = requireRole(req, res, ...FINANCE); if (!user) return;
+      const chantierId = param2;
+      const accountId = body.accountId;
+      if (!accountId) return res.status(400).json({ error: 'Compte obligatoire.' });
+
+      const chantier = await db.getItem('btpChantiers', chantierId);
+      if (!chantier) return res.status(404).json({ error: 'Chantier introuvable.' });
+      if (!['réception_définitive', 'clôturé'].includes(chantier.statut)) {
+        return res.status(409).json({ error: "Les retenues ne se libèrent qu'après la réception définitive." });
+      }
+
+      const accounts = await db.getTable('treasury_accounts');
+      const account = accounts.find((a: any) => a.id === accountId);
+      if (!account) return res.status(400).json({ error: 'Compte introuvable.' });
+
+      const situations = await db.getTable('btpSituations');
+      let total = 0;
+      let count = 0;
+      for (const sit of situations) {
+        if (sit.chantier_id !== chantierId || sit.statut !== 'facturée' || sit.retenue_liberee) continue;
+        total += Number(sit.retenue_amount) || 0;
+        await db.update('btpSituations', sit.id, { retenue_liberee: true });
+        count++;
+      }
+      if (count === 0 || total <= 0) return res.status(409).json({ error: 'Aucune retenue à libérer.' });
+
+      const tx = {
+        id: genId(), accountId, toAccountId: null, type: 'CREDIT', amount: total,
+        date: new Date().toISOString(), referenceId: chantierId, category: 'SITUATION_TRAVAUX',
+        description: `Libération RG (${count} situations) — Chantier: ${chantier.nom}`,
+        isReconciled: false,
+      };
+      await db.insert('transactions', tx);
+      await db.update('treasury_accounts', accountId, { balance: (account.balance || 0) + total });
+
+      await db.insert('notifications', {
+        id: genId(), targetRole: 'GERANT',
+        message: `Retenues libérées: ${total.toLocaleString('fr-FR')} GNF encaissés sur « ${chantier.nom} ».`,
+        type: 'SUCCESS', isRead: false, createdAt: new Date().toISOString(),
+      });
+
+      return res.status(201).json({ success: true, transaction: tx, total_libere: total, situations: count });
+    }
+
+    // --- Réceptionner un bon de commande → stock + dépense ---
+    if (route === 'btp' && param1 === 'bons' && param3 === 'recevoir' && method === 'POST') {
+      const user = requireRole(req, res, 'GERANT', 'RESP_MATERIEL', 'MAGASINIER_BTP'); if (!user) return;
+      const bcId = param2;
+
+      const bc = await db.getItem('btpBonCommandes', bcId);
+      if (!bc) return res.status(404).json({ error: 'BC introuvable.' });
+      if (bc.statut !== 'soumis') return res.status(409).json({ error: `BC non réceptionnable (${bc.statut}).` });
+
+      const lignes = bc.lignes || [];
+      if (!lignes.length) return res.status(400).json({ error: 'BC sans lignes.' });
+
+      let totalHT = Number(bc.total_ht) || 0;
+      if (totalHT <= 0) {
+        totalHT = lignes.reduce((s: number, l: any) => s + (Number(l.quantite) || 0) * (Number(l.pu) || 0), 0);
+      }
+      const tva = Math.round(totalHT * 0.18 * 100) / 100;
+      const ttc = totalHT + tva;
+
+      const chantiers = await db.getTable('btpChantiers');
+      const chantier = chantiers.find((c: any) => c.id === bc.chantier_id);
+      const chantierNom = chantier?.nom || '';
+
+      // 1. Mouvements d'entrée en stock dépôt
+      const mouvements = [];
+      for (const l of lignes) {
+        const mvt = {
+          id: genId(), article_id: l.article_id || '', type: 'entree',
+          quantite: Number(l.quantite) || 0, cout_unitaire: 0,
+          chantier_id: '', bc_id: bcId,
+          motif: `Réception BC ${bcId.slice(0, 8)}${chantierNom ? ` — ${chantierNom}` : ''}`,
+          created_by: user.id, createdAt: new Date().toISOString(),
+        };
+        await db.insert('btpMouvements', mvt);
+        mouvements.push(mvt);
+      }
+
+      // 2. BC → reçu
+      await db.update('btpBonCommandes', bcId, { statut: 'reçu', date_reception: new Date().toISOString() });
+
+      // 3. Dépense noyau auto (TVA 18%, rattachée chantier)
+      const expense = {
+        id: genId(), category: 'ACHAT_MARCHANDISE',
+        amountHT: totalHT, tvaAmount: tva, amountTTC: ttc,
+        description: `BC ${bcId.slice(0, 8)} — ${bc.fournisseur || 'fournisseur'}${chantierNom ? ` (Chantier: ${chantierNom})` : ''}`,
+        date: new Date().toISOString().split('T')[0], status: 'PENDING',
+        chantier_id: bc.chantier_id || '', createdAt: new Date().toISOString(),
+      };
+      await db.insert('expenses', expense);
+
+      // 4. Notification
+      await db.insert('notifications', {
+        id: genId(), targetRole: 'COMPTABLE',
+        message: `BC réceptionné (${ttc.toLocaleString('fr-FR')} GNF TTC): dépense en attente${chantierNom ? ` — Chantier ${chantierNom}` : ''}.`,
+        type: 'INFO', isRead: false, createdAt: new Date().toISOString(),
+      });
+
+      return res.status(201).json({ success: true, mouvements, expense, bon_commande: { ...bc, statut: 'reçu' } });
+    }
+
+    // ============================================================
+    // BTP — CHANTIER STATS (agrégats P&L calculés serveur)
+    // ============================================================
+    if (route === 'btp' && param1 === 'stats' && method === 'GET') {
+      const user = requireAuth(req, res); if (!user) return;
+      const [chantiers, situations, pointages, affectations, mouvements, heuresEngins, engins, sousTraitances, expenses] = await Promise.all([
+        db.getTable('btpChantiers'), db.getTable('btpSituations'),
+        db.getTable('btpPointages'), db.getTable('btpAffectations'),
+        db.getTable('btpMouvements'), db.getTable('btpHeuresEngins'),
+        db.getTable('btpEngins'), db.getTable('btpSousTraitances'),
+        db.getTable('expenses'),
+      ]);
+
+      // Taux par (employé, chantier) et par engin
+      const tauxMO: Record<string, number> = {};
+      for (const a of affectations) {
+        tauxMO[`${a.employee_id}|${a.chantier_id}`] = Number(a.taux_journalier) || 0;
+      }
+      const tauxEngin: Record<string, number> = {};
+      for (const e of engins) tauxEngin[e.id] = Number(e.taux_horaire) || 0;
+
+      const stats = chantiers.map((c: any) => {
+        const s: any = {
+          id: c.id, budget_engage: 0, montant_situations_facturees: 0,
+          montant_situations_attente: 0, cout_mo_reel: 0, heures_pointees: 0,
+          cout_engins: 0, cout_stock_sorti: 0, cout_sous_traitance: 0, retenue_bloquee: 0,
+        };
+
+        for (const e of expenses) {
+          if ((e.chantier_id || '') !== c.id || e.status === 'REJECTED') continue;
+          s.budget_engage += Number(e.amountTTC) || Number(e.amount) || 0;
+        }
+        for (const sit of situations) {
+          if (sit.chantier_id !== c.id) continue;
+          const m = Number(sit.montant_facture) || 0;
+          if (sit.statut === 'facturée') {
+            s.montant_situations_facturees += m;
+            if (!sit.retenue_liberee) s.retenue_bloquee += Number(sit.retenue_amount) || 0;
+          } else if (sit.statut === 'en_attente_facturation') {
+            s.montant_situations_attente += m;
+          }
+        }
+        for (const p of pointages) {
+          if (p.chantier_id !== c.id) continue;
+          const h = Number(p.heures) || 0;
+          s.heures_pointees += h;
+          s.cout_mo_reel += (h / 8) * (tauxMO[`${p.employee_id}|${c.id}`] || 0);
+        }
+        for (const m of mouvements) {
+          if (m.chantier_id !== c.id || m.type !== 'sortie_chantier') continue;
+          s.cout_stock_sorti += (Number(m.quantite) || 0) * (Number(m.cout_unitaire) || 0);
+        }
+        for (const h of heuresEngins) {
+          if (h.chantier_id !== c.id) continue;
+          s.cout_engins += (Number(h.heures) || 0) * (tauxEngin[h.engin_id] || 0);
+        }
+        for (const st of sousTraitances) {
+          if (st.chantier_id !== c.id || st.statut === 'résiliée') continue;
+          s.cout_sous_traitance += Number(st.montant) || 0;
+        }
+        return s;
+      });
+
+      return res.json(stats);
+    }
+
+    // ============================================================
+    // BTP — VALIDATION RH (endpoint dédié, champ unique)
+    // ============================================================
+    if (route === 'btp' && param1 === 'chantiers' && param3 === 'valider-rh' && method === 'POST') {
+      const user = requireRole(req, res, 'GERANT', 'RH'); if (!user) return;
+      const chantierId = param2;
+      const chantier = await db.getItem('btpChantiers', chantierId);
+      if (!chantier) return res.status(404).json({ error: 'Chantier introuvable.' });
+      await db.update('btpChantiers', chantierId, { rh_validation: true });
+      await db.insert('notifications', {
+        id: genId(), targetRole: 'COND_TRAVAUX',
+        message: `Validation RH accordée pour « ${chantier.nom} » — le chantier peut être démarré (sous réserve de la validation Matériel).`,
+        type: 'SUCCESS', isRead: false, createdAt: new Date().toISOString(),
+      });
+      return res.json({ success: true });
     }
 
     // ============================================================

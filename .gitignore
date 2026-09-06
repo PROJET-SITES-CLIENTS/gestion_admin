@@ -24,3 +24,5 @@ _archive/
 
 # Vercel
 .vercel/
+
+.vercel

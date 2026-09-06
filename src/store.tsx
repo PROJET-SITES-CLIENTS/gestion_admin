@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Project, User, Role, CompanyConfig, Expense, ProjectStatus, AuthResponse, Prospect, TreasuryAccount, Transaction, BtpOffre, BtpChantier, BtpJournalChantier, BtpIncidentQHSE, BtpEngin, BtpSituationTravaux, BtpOffreStatus, BtpChantierStatus, BtpEnginStatus, BtpAffectation, BtpPointage, BtpArticle, BtpBonCommande, BtpMouvement, BtpDocument, BtpChantierStat, BtpEmployeeDirectoryEntry, BtpAvenant, BtpOrdreService, BtpSousTraitance, BtpFournisseur, BtpCautionnement, BtpInspection, BtpPrixUnitaire, BtpHeureEngin, LotMatierePremiere, AgroMatierePremiereStatus, LotProduction, AgroProductionStatus, ControleQualiteProcess, CommandeClientAgro, AgroCommandeStatus, LigneCommandeLotLivre, FicheTracabilite, ReclamationClient, AgroReclamationStatus, Task, AppNotification, CalendarEvent } from './types';
+import { Project, User, Role, CompanyConfig, Expense, ProjectStatus, AuthResponse, Prospect, TreasuryAccount, Transaction, BtpOffre, BtpChantier, BtpJournalChantier, BtpIncidentQHSE, BtpEngin, BtpSituationTravaux, BtpOffreStatus, BtpChantierStatus, BtpEnginStatus, BtpAffectation, BtpPointage, BtpArticle, BtpBonCommande, BtpMouvement, BtpDocument, BtpChantierStat, BtpEmployeeDirectoryEntry, BtpAvenant, BtpOrdreService, BtpSousTraitance, BtpFournisseur, BtpCautionnement, BtpInspection, BtpPrixUnitaire, BtpHeureEngin, LotMatierePremiere, AgroMatierePremiereStatus, LotProduction, AgroProductionStatus, ControleQualiteProcess, CommandeClientAgro, AgroCommandeStatus, LigneCommandeLotLivre, FicheTracabilite, ReclamationClient, AgroReclamationStatus, Task, AppNotification, CalendarEvent, ServiceCatalogItem, ServiceProposal, BtpReserve, BtpHabilitation } from './types';
 import { apiFetch, getAuthToken, readApiError } from './apiClient';
 
 export interface Toast {
@@ -45,6 +45,16 @@ interface AppContextType {
   updateProspect: (id: string, updates: Partial<Prospect>) => Promise<void>;
   deleteProspect: (id: string) => Promise<void>;
   convertProspectToProject: (id: string) => Promise<string | undefined>;
+  
+  // Nouveaux ajouts CRM & Catalogue
+  catalogue: ServiceCatalogItem[];
+  addCatalogueItem: (item: Omit<ServiceCatalogItem, 'id'>) => Promise<void>;
+  updateCatalogueItem: (id: string, updates: Partial<ServiceCatalogItem>) => Promise<void>;
+  deleteCatalogueItem: (id: string) => Promise<void>;
+  
+  proposals: ServiceProposal[];
+  generateProposal: (proposal: Omit<ServiceProposal, 'id' | 'createdAt'>) => Promise<void>;
+  updateProposalStatus: (id: string, status: ServiceProposal['status']) => Promise<void>;
   activeMenu: string;
   setActiveMenu: (menu: string) => void;
   // Messaging
@@ -64,11 +74,19 @@ interface AppContextType {
   registerSalaryAdvance: (employeeId: string, amount: number) => Promise<void>;
   addPayslip: (ps: any) => Promise<void>;
   updatePayslipStatus: (id: string, status: string) => Promise<void>;
-  // Accounting
+  // Accounting (Treasury & SYSCOHADA)
   treasuryAccounts: TreasuryAccount[];
   transactions: Transaction[];
+  accountingAccounts: any[];
+  accountingJournals: any[];
+  accountingEntries: any[];
+  assets: any[];
   addTreasuryAccount: (acc: Omit<TreasuryAccount, 'id' | 'balance'>) => Promise<void>;
   addTransaction: (tx: Omit<Transaction, 'id' | 'date'>) => Promise<boolean>;
+  postAccountingEntry: (entry: Omit<any, 'id' | 'createdAt' | 'createdBy' | 'status'>) => Promise<void>;
+  validateAccountingEntry: (id: string) => Promise<void>;
+  createAsset: (asset: Omit<any, 'id' | 'status'>) => Promise<void>;
+  createAccountingAccount: (account: Omit<any, 'id'>) => Promise<void>;
   // Communication & Tasks
   tasks: any[];
   notifications: any[];
@@ -136,6 +154,12 @@ interface AppContextType {
   validerBtpAvenant: (id: string) => Promise<boolean>;
   rejeterBtpAvenant: (id: string) => Promise<void>;
   btpOrdresService: BtpOrdreService[];
+  btpReserves: BtpReserve[];
+  btpHabilitations: BtpHabilitation[];
+  createBtpReserve: (r: Omit<BtpReserve, 'id' | 'created_by'>) => Promise<void>;
+  updateBtpReserve: (id: string, updates: Partial<BtpReserve>) => Promise<void>;
+  createBtpHabilitation: (h: Omit<BtpHabilitation, 'id'>) => Promise<void>;
+  updateBtpHabilitation: (id: string, updates: Partial<BtpHabilitation>) => Promise<void>;
   btpSousTraitances: BtpSousTraitance[];
   createBtpSousTraitance: (st: Omit<BtpSousTraitance, 'id' | 'statut' | 'created_by'>) => Promise<void>;
   solderBtpSousTraitance: (id: string) => Promise<void>;
@@ -151,6 +175,9 @@ interface AppContextType {
   createBtpPrixUnitaire: (p: Omit<BtpPrixUnitaire, 'id'>) => Promise<void>;
   btpHeuresEngins: BtpHeureEngin[];
   createBtpHeureEngin: (h: Omit<BtpHeureEngin, 'id' | 'created_by'>) => Promise<void>;
+  validerRhChantier: (id: string) => Promise<void>;
+  updateBtpEngin: (id: string, updates: Partial<BtpEngin>) => Promise<void>;
+  libererCautionnement: (id: string) => Promise<void>;
 
   // Agro Module
   agroLotMatierePremieres: LotMatierePremiere[];
@@ -181,7 +208,18 @@ interface AppContextType {
   addAgendaEvent: (event: Omit<CalendarEvent, 'id'>) => Promise<void>;
   deleteAgendaEvent: (id: string) => Promise<void>;
 
-  // Retour utilisateur (toasts) — remplace les catch silencieux
+  // Module Assistant
+  assistantTasks: any[];
+  assistantMeetings: any[];
+  assistantDocuments: any[];
+  assistantContacts: any[];
+  assistantTravels: any[];
+
+  // Helpers Assistant
+  crudCreateItem: (table: string, payload: any, context: string) => Promise<any>;
+  crudUpdateItem: (table: string, id: string, payload: any, context: string) => Promise<any>;
+  crudDeleteItem: (table: string, id: string, context: string) => Promise<boolean>;
+
   toasts: Toast[];
   pushToast: (message: string, type?: Toast['type']) => void;
   dismissToast: (id: number) => void;
@@ -199,6 +237,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [companyConfig, setCompanyConfig] = useState<CompanyConfig>({});
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
   const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [catalogue, setCatalogue] = useState<ServiceCatalogItem[]>([]);
+  const [proposals, setProposals] = useState<ServiceProposal[]>([]);
   const [activeMenu, setActiveMenu] = useState('DASHBOARD');
   const [internalMessages, setInternalMessages] = useState<any[]>([]);
 
@@ -208,9 +248,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [payslips, setPayslips] = useState<any[]>([]);
 
-  // Accounting States
+  // Accounting States (Treasury & SYSCOHADA)
   const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accountingAccounts, setAccountingAccounts] = useState<any[]>([]);
+  const [accountingJournals, setAccountingJournals] = useState<any[]>([]);
+  const [accountingEntries, setAccountingEntries] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
 
   // Tasks & Notifications
   const [tasks, setTasks] = useState<any[]>([]);
@@ -237,6 +281,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Extension BTP Vague 2
   const [btpAvenants, setBtpAvenants] = useState<BtpAvenant[]>([]);
   const [btpOrdresService, setBtpOrdresService] = useState<BtpOrdreService[]>([]);
+  const [btpReserves, setBtpReserves] = useState<BtpReserve[]>([]);
+  const [btpHabilitations, setBtpHabilitations] = useState<BtpHabilitation[]>([]);
   const [btpSousTraitances, setBtpSousTraitances] = useState<BtpSousTraitance[]>([]);
   const [btpFournisseurs, setBtpFournisseurs] = useState<BtpFournisseur[]>([]);
   const [btpCautionnements, setBtpCautionnements] = useState<BtpCautionnement[]>([]);
@@ -255,6 +301,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Assistante States
   const [agendaEvents, setAgendaEvents] = useState<CalendarEvent[]>([]);
+  const [assistantTasks, setAssistantTasks] = useState<any[]>([]);
+  const [assistantMeetings, setAssistantMeetings] = useState<any[]>([]);
+  const [assistantDocuments, setAssistantDocuments] = useState<any[]>([]);
+  const [assistantContacts, setAssistantContacts] = useState<any[]>([]);
+  const [assistantTravels, setAssistantTravels] = useState<any[]>([]);
 
   // Toasts (retour utilisateur des erreurs API)
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -303,6 +354,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       reportError(err, context);
       return null;
+    }
+  }, [pushToast, reportError]);
+
+  /** Suppression via le CRUD générique (réservé GERANT côté serveur) */
+  const crudDelete = useCallback(async (table: string, id: string, context: string): Promise<boolean> => {
+    try {
+      const res = await apiFetch(`/crud/${table}/${id}/delete`, { method: 'POST' });
+      if (res.ok) return true;
+      pushToast(`${context} : ${await readApiError(res)}`, 'ERROR');
+      return false;
+    } catch (err) {
+      reportError(err, context);
+      return false;
     }
   }, [pushToast, reportError]);
 
@@ -395,6 +459,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCompanyConfig(data.companyConfig || {});
         setExpenses(data.expenses || []);
         setProspects(data.prospects || []);
+        setCatalogue(data.catalogue || []);
+        setProposals(data.proposals || []);
         setInternalMessages(data.internal_messages || []);
         setEmployees(data.employees || []);
         setContracts(data.contracts || []);
@@ -402,6 +468,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPayslips(data.payslips || []);
         setTreasuryAccounts(data.treasury_accounts || []);
         setTransactions(data.transactions || []);
+        setAccountingAccounts(data.accountingAccounts || []);
+        setAccountingJournals(data.accountingJournals || []);
+        setAccountingEntries(data.accountingEntries || []);
+        setAssets(data.assets || []);
         
         // Timeout & Escalade (48h) — l'escalade est PERSISTÉE serveur,
         // sinon elle était recalculée (et perdue) à chaque rafraîchissement.
@@ -439,6 +509,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setBtpEmployeeDirectory(data.btpEmployeeDirectory || []);
         setBtpAvenants(data.btpAvenants || []);
         setBtpOrdresService(data.btpOs || []);
+        setBtpReserves(data.btpReserves || []);
+        setBtpHabilitations(data.btpHabilitations || []);
         setBtpSousTraitances(data.btpSousTraitances || []);
         setBtpFournisseurs(data.btpFournisseurs || []);
         setBtpCautionnements(data.btpCautionnements || []);
@@ -457,6 +529,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Assistante
         setAgendaEvents(data.agendaEvents || []);
+        setAssistantTasks(data.assistantTasks || []);
+        setAssistantMeetings(data.assistantMeetings || []);
+        setAssistantDocuments(data.assistantDocuments || []);
+        setAssistantContacts(data.assistantContacts || []);
+        setAssistantTravels(data.assistantTravels || []);
 
         setIsReady(true);
       } else if (res.status !== 401) {
@@ -831,6 +908,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await addNotification('ALL', `La note de frais de ${exp.amountTTC.toLocaleString()} GNF a été rejetée. Motif: ${reason || 'Non spécifié'}`, 'WARNING');
       } else if (status === 'PAID') {
         await addNotification('ALL', `La note de frais de ${exp.amountTTC.toLocaleString()} GNF a été payée.`, 'SUCCESS');
+        // --- GÉNÉRATION AUTOMATIQUE ÉCRITURE COMPTABLE ---
+        autoGenerateAccountingEntry('ACHAT', exp.amountTTC, `Dépense : ${exp.description}`);
       }
     } catch (err) { reportError(err, 'Opération'); }
   };
@@ -892,12 +971,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prospect = prospects.find(p => p.id === id);
     if (!prospect) return undefined;
 
+    // Éviter les doublons de clics ou de drag-and-drop
+    const existingProject = projects.find(p => (p as any).prospectId === id);
+    if (existingProject) {
+      await updateProspect(id, { stage: 'GAGNE' }); // S'assurer que le CRM est bien synchronisé
+      return existingProject;
+    }
+
     await updateProspect(id, { stage: 'GAGNE' });
 
     try {
       const res = await apiFetch('/projects', {
         method: 'POST',
-        body: JSON.stringify({ name: prospect.name, budget: 0 })
+        body: JSON.stringify({ 
+          name: prospect.name + (prospect.company ? ` - ${prospect.company}` : ''), 
+          clientName: prospect.name,
+          clientContact: `${prospect.phone} ${prospect.email || ''}`,
+          prospectId: id,
+          budget: 0 
+        })
       });
       if (res.ok) {
         const newProj = await res.json();
@@ -907,7 +999,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         await syncProject(newProj.id, {
           description,
-          budget: prospect.estimatedBudget ? Number(prospect.estimatedBudget) : 0,
+          budget: prospect.estimatedBudget ? parseInt(prospect.estimatedBudget.replace(/[^0-9]/g, ''), 10) || 0 : 0,
           clientName: prospect.name,
           clientContact: prospect.phone + (prospect.email ? ' / ' + prospect.email : '')
         });
@@ -915,6 +1007,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (err) { reportError(err, 'Opération'); }
     return undefined;
+  };
+
+  // --- Nouveaux Ajouts CRM & Catalogue ---
+  const addCatalogueItem = async (item: Omit<ServiceCatalogItem, 'id'>) => {
+    try {
+      const res = await apiFetch('/crud/catalogue', { method: 'POST', body: JSON.stringify(item) });
+      if (res.ok) {
+        const newItem = await res.json();
+        setCatalogue(prev => [...prev, newItem]);
+        pushToast('Article ajouté au catalogue', 'SUCCESS');
+      }
+    } catch (e) { reportError(e, 'Opération'); }
+  };
+  const updateCatalogueItem = async (id: string, updates: Partial<ServiceCatalogItem>) => {
+    try {
+      const res = await apiFetch(`/crud/catalogue/${id}/update`, { method: 'POST', body: JSON.stringify(updates) });
+      if (res.ok) {
+        const updated = await res.json();
+        setCatalogue(prev => prev.map(c => c.id === id ? updated : c));
+      }
+    } catch (e) { reportError(e, 'Opération'); }
+  };
+  const deleteCatalogueItem = async (id: string) => {
+    setCatalogue(prev => prev.filter(c => c.id !== id));
+    try { await apiFetch(`/crud/catalogue/${id}/delete`, { method: 'POST' }); } catch (e) {}
+  };
+  
+  const generateProposal = async (proposal: Omit<ServiceProposal, 'id' | 'createdAt'>) => {
+    try {
+      const res = await apiFetch('/crud/proposals', { method: 'POST', body: JSON.stringify(proposal) });
+      if (res.ok) {
+        const newProposal = await res.json();
+        setProposals(prev => [...prev, newProposal]);
+        pushToast('Proposition générée avec succès', 'SUCCESS');
+      }
+    } catch (e) { reportError(e, 'Opération'); }
+  };
+  const updateProposalStatus = async (id: string, status: ServiceProposal['status']) => {
+    try {
+      const res = await apiFetch(`/crud/proposals/${id}/update`, { method: 'POST', body: JSON.stringify({ status }) });
+      if (res.ok) {
+        const updated = await res.json();
+        setProposals(prev => prev.map(p => p.id === id ? updated : p));
+      }
+    } catch (e) { reportError(e, 'Opération'); }
   };
 
   // HR Methods
@@ -1019,6 +1156,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             description: `RTS - Employé ID: ${payslip.employeeId} (${payslip.month}/${payslip.year})`
           });
         }
+        
+        // --- GÉNÉRATION AUTOMATIQUE ÉCRITURE COMPTABLE ---
+        const totalSalaryCost = payslip.netSalary + totalCnss + (payslip.rtsAmount || 0);
+        autoGenerateAccountingEntry('SALAIRE', totalSalaryCost, `Paie ${payslip.month}/${payslip.year} - ID: ${payslip.employeeId}`);
+        
       }
     } catch (e) { reportError(e, 'Opération'); }
   };
@@ -1167,6 +1309,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (updated) setBtpChantiers(prev => prev.map(c => c.id === id ? updated : c));
   };
 
+  /** Validation RH dédiée (endpoint sécurisé champ unique) */
+  const validerRhChantier = async (id: string) => {
+    try {
+      const res = await apiFetch(`/btp/chantiers/${id}/valider-rh`, { method: 'POST', body: JSON.stringify({}) });
+      if (res.ok) {
+        setBtpChantiers(prev => prev.map(c => c.id === id ? { ...c, rh_validation: true } : c));
+        pushToast('Validation RH accordée.', 'SUCCESS');
+      } else {
+        pushToast(await readApiError(res, 'Validation impossible'), 'ERROR');
+      }
+    } catch (err) {
+      reportError(err, 'Validation RH');
+    }
+  };
+
+  /** Mise à jour complète d'un engin (taux_horaire, compteur, maintenance…) */
+  const updateBtpEngin = async (id: string, updates: Partial<BtpEngin>) => {
+    const updated = await crudUpdate('btpEngins', id, updates, 'Mise à jour engin');
+    if (updated) setBtpEngins(prev => prev.map(e => e.id === id ? updated : e));
+  };
+
+  /** Libérer un cautionnement */
+  const libererCautionnement = async (id: string) => {
+    const updated = await crudUpdate('btpCautionnements', id, { statut: 'libérée' }, 'Libération caution');
+    if (updated) setBtpCautionnements(prev => prev.map(c => c.id === id ? updated : c));
+  };
+
   const assignBtpEngin = async (enginId: string, chantierId: string | undefined) => {
     const engin = btpEngins.find(e => e.id === enginId);
     if (!engin) return;
@@ -1200,6 +1369,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (incident.gravite === 'critique') {
       await updateBtpChantierStatus(incident.chantier_id, 'suspendu');
       await addNotification('GERANT', `INCIDENT CRITIQUE sur le chantier ID ${incident.chantier_id} ! Chantier suspendu.`, 'ERROR');
+      await addTask(
+        'ASSISTANTE',
+        `URGENCE QHSE : Incident Critique (Chantier ${incident.chantier_id})`,
+        `Un incident critique a été déclaré : ${incident.description}. Le chantier est automatiquement suspendu. Merci d'entamer les procédures d'urgence (Assurances, information Client, RH).`,
+        'HIGH'
+      );
     }
   };
 
@@ -1333,7 +1508,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (created) setBtpDocuments(prev => [...prev, created]);
   };
 
-  // --- EXTENSION BTP — Vague 2 ---
+  const createBtpReserve = async (r: Omit<BtpReserve, 'id' | 'created_by'>) => {
+    const created = await crudCreate<BtpReserve>('btpReserves', r, 'Réserve de chantier');
+    if (created) setBtpReserves(prev => [...prev, created]);
+  };
+
+  const updateBtpReserve = async (id: string, updates: Partial<BtpReserve>) => {
+    const updated = await crudUpdate('btpReserves', id, updates, 'Statut réserve');
+    if (updated) setBtpReserves(prev => prev.map(x => x.id === id ? updated : x));
+  };
+
+  const createBtpHabilitation = async (h: Omit<BtpHabilitation, 'id'>) => {
+    const created = await crudCreate<BtpHabilitation>('btpHabilitations', h, 'Habilitation employé');
+    if (created) setBtpHabilitations(prev => [...prev, created]);
+  };
+
+  const updateBtpHabilitation = async (id: string, updates: Partial<BtpHabilitation>) => {
+    const updated = await crudUpdate('btpHabilitations', id, updates, 'Habilitation employé');
+    if (updated) setBtpHabilitations(prev => prev.map(x => x.id === id ? updated : x));
+  };
+
+  // --- EXTENSION BTP — Vague 3 ---
   const createBtpAvenant = async (av: Omit<BtpAvenant, 'id' | 'statut' | 'created_by'>) => {
     const created = await crudCreate<BtpAvenant>('btpAvenants', av, 'Avenant');
     if (created) {
@@ -1638,6 +1833,105 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // --- COMPTABILITÉ (SYSCOHADA) ---
+  const postAccountingEntry = async (entry: Omit<any, 'id' | 'createdAt' | 'createdBy' | 'status'>) => {
+    // Vérification de la partie double avant envoi au serveur
+    const debit = entry.lines.reduce((acc: number, l: any) => acc + (l.debit || 0), 0);
+    const credit = entry.lines.reduce((acc: number, l: any) => acc + (l.credit || 0), 0);
+    if (Math.abs(debit - credit) > 0.01) {
+      pushToast('L\'écriture est déséquilibrée (Débit ≠ Crédit).', 'ERROR');
+      return;
+    }
+    const created = await crudCreate<any>('accountingEntries', entry, 'Écriture comptable');
+    if (created) setAccountingEntries(prev => [...prev, created]);
+  };
+
+  const validateAccountingEntry = async (id: string) => {
+    const updated = await crudUpdate<any>('accountingEntries', id, { status: 'VALIDATED', validatedAt: new Date().toISOString() }, 'Validation écriture');
+    if (updated) setAccountingEntries(prev => prev.map(e => e.id === id ? updated : e));
+  };
+
+  const createAsset = async (asset: Omit<any, 'id' | 'status'>) => {
+    const created = await crudCreate<any>('assets', asset, 'Immobilisation');
+    if (created) setAssets(prev => [...prev, created]);
+  };
+
+  const createAccountingAccount = async (account: Omit<any, 'id'>) => {
+    const created = await crudCreate<any>('accountingAccounts', account, 'Compte comptable');
+    if (created) setAccountingAccounts(prev => [...prev, created]);
+  };
+
+  // Liaison automatique Trésorerie -> Grand Livre
+  const autoGenerateAccountingEntry = async (type: 'VENTE' | 'ACHAT' | 'SALAIRE', amount: number, label: string) => {
+    if (accountingJournals.length === 0 || accountingAccounts.length === 0) return;
+    
+    // Trouver les journaux
+    const journalVentes = accountingJournals.find(j => j.code === 'VT') || accountingJournals[0];
+    const journalAchats = accountingJournals.find(j => j.code === 'AC') || accountingJournals[0];
+    const journalBanque = accountingJournals.find(j => j.code === 'BQ') || accountingJournals[0];
+
+    // Trouver les comptes de base
+    const compteBanque = accountingAccounts.find(a => a.accountNumber.startsWith('52')) || accountingAccounts[0];
+    const compteVente = accountingAccounts.find(a => a.accountNumber.startsWith('70')) || accountingAccounts[0];
+    const compteAchat = accountingAccounts.find(a => a.accountNumber.startsWith('60')) || accountingAccounts[0];
+    const compteSalaire = accountingAccounts.find(a => a.accountNumber.startsWith('66')) || accountingAccounts[0];
+    
+    // Trouver les comptes de TVA
+    const tvaCollecteeAcc = accountingAccounts.find(a => a.accountNumber.startsWith('443')) || accountingAccounts[0];
+    const tvaDeductibleAcc = accountingAccounts.find(a => a.accountNumber.startsWith('445')) || accountingAccounts[0];
+
+    const tvaRate = companyConfig.tvaRate || 18;
+    const ht = amount / (1 + (tvaRate / 100));
+    const tva = amount - ht;
+
+    let entry: any = null;
+
+    if (type === 'VENTE') {
+      entry = {
+        journalId: journalVentes.id,
+        date: new Date().toISOString(),
+        reference: 'AUTO-VT',
+        description: label,
+        status: 'DRAFT',
+        lines: [
+          { accountId: compteBanque.id, debit: amount, credit: 0, label: label },
+          { accountId: compteVente.id, debit: 0, credit: ht, label: 'HT - ' + label },
+          { accountId: tvaCollecteeAcc.id, debit: 0, credit: tva, label: 'TVA - ' + label }
+        ]
+      };
+    } else if (type === 'ACHAT') {
+      entry = {
+        journalId: journalAchats.id,
+        date: new Date().toISOString(),
+        reference: 'AUTO-AC',
+        description: label,
+        status: 'DRAFT',
+        lines: [
+          { accountId: compteAchat.id, debit: ht, credit: 0, label: 'HT - ' + label },
+          { accountId: tvaDeductibleAcc.id, debit: tva, credit: 0, label: 'TVA - ' + label },
+          { accountId: compteBanque.id, debit: 0, credit: amount, label: label }
+        ]
+      };
+    } else if (type === 'SALAIRE') {
+      entry = {
+        journalId: journalBanque.id,
+        date: new Date().toISOString(),
+        reference: 'AUTO-RH',
+        description: label,
+        status: 'DRAFT',
+        lines: [
+          { accountId: compteSalaire.id, debit: amount, credit: 0, label: label },
+          { accountId: compteBanque.id, debit: 0, credit: amount, label: label }
+        ]
+      };
+    }
+
+    if (entry) {
+      entry.lines = entry.lines.filter((l: any) => l.debit > 0 || l.credit > 0);
+      await postAccountingEntry(entry);
+    }
+  };
+
   const contextValue = React.useMemo(() => ({
       projects,
       clients,
@@ -1672,6 +1966,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateProspect,
       deleteProspect,
       convertProspectToProject,
+      catalogue,
+      addCatalogueItem,
+      updateCatalogueItem,
+      deleteCatalogueItem,
+      proposals,
+      generateProposal,
+      updateProposalStatus,
       activeMenu,
       setActiveMenu,
       internalMessages,
@@ -1741,6 +2042,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       validerBtpAvenant,
       rejeterBtpAvenant,
       btpOrdresService,
+      btpReserves,
+      createBtpReserve,
+      updateBtpReserve,
+      btpHabilitations,
+      createBtpHabilitation,
+      updateBtpHabilitation,
       btpSousTraitances,
       createBtpSousTraitance,
       solderBtpSousTraitance,
@@ -1756,6 +2063,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createBtpPrixUnitaire,
       btpHeuresEngins,
       createBtpHeureEngin,
+      validerRhChantier,
+      updateBtpEngin,
+      libererCautionnement,
       agroLotMatierePremieres,
       agroLotProductions,
       agroControles,
@@ -1775,11 +2085,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       agendaEvents,
       addAgendaEvent,
       deleteAgendaEvent,
+      
+      // Accounting (SYSCOHADA)
+      accountingAccounts,
+      accountingJournals,
+      accountingEntries,
+      assets,
+      postAccountingEntry,
+      validateAccountingEntry,
+      createAsset,
+      createAccountingAccount,
+      
+      // Assistant Module
+      assistantTasks,
+      assistantMeetings,
+      assistantDocuments,
+      assistantContacts,
+      assistantTravels,
+      crudCreateItem: crudCreate,
+      crudUpdateItem: crudUpdate,
+      crudDeleteItem: crudDelete,
+
       toasts,
       pushToast,
       dismissToast
   }), [
-      projects, clients, expenses, currentRole, currentUser, companyConfig, isReady, systemUsers, prospects, activeMenu, internalMessages, employees, contracts, leaveRequests, payslips, treasuryAccounts, transactions, tasks, notifications, btpOffres, btpChantiers, btpEngins, btpIncidents, btpJournaux, btpSituations, btpAffectations, btpPointages, btpArticles, btpBonCommandes, btpMouvements, btpDocuments, btpChantierStats, btpEmployeeDirectory, btpAvenants, btpOrdresService, btpSousTraitances, btpFournisseurs, btpCautionnements, btpInspections, btpPrixUnitaires, btpHeuresEngins, agroLotMatierePremieres, agroLotProductions, agroControles, agroCommandes, agroLignesLivrees, agroFiches, agroReclamations, agendaEvents, toasts
+      projects, clients, expenses, currentRole, currentUser, companyConfig, isReady, systemUsers, prospects, catalogue, proposals, activeMenu, internalMessages, employees, contracts, leaveRequests, payslips, treasuryAccounts, transactions, tasks, notifications, btpOffres, btpChantiers, btpEngins, btpIncidents, btpJournaux, btpSituations, btpAffectations, btpPointages, btpArticles, btpBonCommandes, btpMouvements, btpDocuments, btpChantierStats, btpEmployeeDirectory, btpAvenants, btpOrdresService, btpSousTraitances, btpFournisseurs, btpCautionnements, btpInspections, btpPrixUnitaires, btpHeuresEngins, btpReserves, btpHabilitations,
+      createBtpReserve, updateBtpReserve, createBtpHabilitation, updateBtpHabilitation, agroLotMatierePremieres, agroLotProductions, agroControles, agroCommandes, agroLignesLivrees, agroFiches, agroReclamations, agendaEvents, accountingAccounts, accountingJournals, accountingEntries, assets, toasts,
+      assistantTasks, assistantMeetings, assistantDocuments, assistantContacts, assistantTravels, crudCreate, crudUpdate, crudDelete
   ]);
 
   return (

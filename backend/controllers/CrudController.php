@@ -281,6 +281,36 @@ class CrudController {
             ],
         ],
 
+        // ---------- EXTENSION BTP — Réserves (réception) & Habilitations (QHSE) ----------
+        'btpReserves' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'COMPTABLE', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'ouverte'],
+            'userField' => 'created_by',
+            'fields' => [
+                'chantier_id' => ['text', 64],
+                'description' => ['multiline', 3000],
+                'gravite' => ['enum', ['mineure', 'majeure', 'bloquante']],
+                'date_limite' => ['date'],
+                'statut' => ['enum', ['ouverte', 'levée', 'annulée']],
+                'levee_par' => ['text', 64],
+                'date_levee' => ['date'],
+            ],
+        ],
+        'btpHabilitations' => [
+            'idKey' => 'id',
+            'roles' => ['GERANT', 'QHSE_BTP', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'DEVELOPPEUR'],
+            'defaults' => ['statut' => 'valide'],
+            'fields' => [
+                'employee_id' => ['text', 64],
+                'type_habilitation' => ['text', 200],
+                'date_obtention' => ['date'],
+                'date_expiration' => ['date'],
+                'organisme' => ['text', 200],
+                'statut' => ['enum', ['valide', 'expiree', 'en_renouvellement']],
+            ],
+        ],
+
         'agroLotMatierePremieres' => [
             'idKey' => 'id_lot', 'roles' => self::AGRO_ROLES, 'idPrefix' => 'MP',
             'defaults' => ['statut' => 'planifié'],
@@ -368,6 +398,117 @@ class CrudController {
                 'notes' => ['multiline', 3000], 'status' => ['enum', ['BROUILLON', 'ENVOYE', 'ACCEPTE', 'REFUSE']],
             ],
         ],
+        'catalogue' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'COMMERCIAL'],
+            'defaults' => [],
+            'fields' => [
+                'category' => ['text', 100], 'name' => ['text', 250],
+                'description' => ['multiline', 1000], 'basePrice' => ['float']
+            ]
+        ],
+        'proposals' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'COMMERCIAL'],
+            'defaults' => [],
+            'fields' => [
+                'prospectId' => ['text', 64], 'title' => ['text', 250],
+                'items' => ['array'], 'totalAmount' => ['float'],
+                'status' => ['enum', ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED']],
+                'validUntil' => ['date']
+            ]
+        ],
+
+        // ------------------------------------------------------------------
+        // COMPTABILITÉ SYSCOHADA
+        // ------------------------------------------------------------------
+        'accountingAccounts' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'COMPTABLE'],
+            'defaults' => [],
+            'fields' => [
+                'accountNumber' => ['text', 20], 'name' => ['text', 150],
+                'class' => ['int'], 'isSubAccount' => ['bool'],
+                'parentAccountId' => ['text', 64],
+            ]
+        ],
+        'accountingJournals' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'COMPTABLE'],
+            'defaults' => [],
+            'fields' => [
+                'code' => ['text', 10], 'name' => ['text', 150],
+                'type' => ['enum', ['ACHATS', 'VENTES', 'TRESORERIE', 'OPERATIONS_DIVERSES', 'A_NOUVEAUX']],
+            ]
+        ],
+        'accountingEntries' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'COMPTABLE'],
+            'defaults' => ['status' => 'DRAFT'],
+            'userField' => 'createdBy',
+            'fields' => [
+                'journalId' => ['text', 64], 'date' => ['date'],
+                'reference' => ['text', 100], 'description' => ['multiline', 1000],
+                'lines' => ['array'], 'status' => ['enum', ['DRAFT', 'VALIDATED']],
+                'validatedAt' => ['date']
+            ]
+        ],
+        'assets' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'COMPTABLE'],
+            'defaults' => ['status' => 'ACTIF'],
+            'fields' => [
+                'name' => ['text', 250], 'accountId' => ['text', 64],
+                'purchaseDate' => ['date'], 'purchaseValue' => ['float'],
+                'amortizationType' => ['enum', ['LINEAIRE', 'DEGRESSIF']],
+                'amortizationDurationYears' => ['int'],
+                'status' => ['enum', ['ACTIF', 'CEDE', 'REFORME']]
+            ]
+        ],
+        // --- MODULE ASSISTANT DE DIRECTION ---
+        'assistantTasks' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'ASSISTANTE'],
+            'defaults' => ['status' => 'TODO'],
+            'fields' => [
+                'title' => ['text', 250], 'description' => ['multiline', 5000],
+                'importance' => ['enum', ['HAUTE', 'BASSE']], 'urgence' => ['enum', ['HAUTE', 'BASSE']],
+                'status' => ['enum', ['TODO', 'IN_PROGRESS', 'DONE']], 'dueDate' => ['date'],
+                'delegatedTo' => ['text', 100]
+            ]
+        ],
+        'assistantMeetings' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'ASSISTANTE'],
+            'defaults' => ['status' => 'PLANNED'],
+            'fields' => [
+                'title' => ['text', 250], 'date' => ['date'], 'time' => ['text', 10],
+                'location' => ['text', 250], 'participants' => ['multiline', 1000],
+                'agenda' => ['multiline', 3000], 'status' => ['enum', ['PLANNED', 'HELD', 'CANCELED']],
+                'report' => ['multiline', 10000]
+            ]
+        ],
+        'assistantDocuments' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'ASSISTANTE'],
+            'defaults' => ['status' => 'VALID'],
+            'fields' => [
+                'title' => ['text', 250], 'category' => ['enum', ['CONTRAT', 'ADMINISTRATIF', 'ASSURANCE', 'LEGAL', 'AUTRE']],
+                'url' => ['text', 500], 'isConfidential' => ['bool'],
+                'expirationDate' => ['date'], 'status' => ['enum', ['VALID', 'EXPIRING', 'EXPIRED', 'ARCHIVED']]
+            ]
+        ],
+        'assistantContacts' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'ASSISTANTE'],
+            'defaults' => ['isVip' => false],
+            'fields' => [
+                'name' => ['text', 250], 'organization' => ['text', 250], 'role' => ['text', 150],
+                'phone' => ['text', 50], 'email' => ['text', 250],
+                'category' => ['enum', ['PARTENAIRE', 'INVESTISSEUR', 'INSTITUTION', 'PRESTATAIRE', 'AUTRE']],
+                'notes' => ['multiline', 3000], 'isVip' => ['bool']
+            ]
+        ],
+        'assistantTravels' => [
+            'idKey' => 'id', 'roles' => ['GERANT', 'ASSISTANTE'],
+            'defaults' => ['status' => 'PLANNED'],
+            'fields' => [
+                'destination' => ['text', 250], 'startDate' => ['date'], 'endDate' => ['date'],
+                'purpose' => ['text', 500], 'budget' => ['float'],
+                'status' => ['enum', ['PLANNED', 'ONGOING', 'COMPLETED', 'CANCELED']],
+                'itineraryNotes' => ['multiline', 10000]
+            ]
+        ],
     ];
 
     // ------------------------------------------------------------------
@@ -422,7 +563,13 @@ class CrudController {
 
         $idKey = $schema['idKey'];
         $updated = Database::getInstance()->updateTableItem($table, $idKey, $id,
-            static function ($item) use ($body, $schema) {
+            static function ($item) use ($body, $schema, $table) {
+                // --- PISTE D'AUDIT COMPTABLE (Loi OHADA) ---
+                if ($table === 'accountingEntries' && ($item['status'] ?? '') === 'VALIDATED') {
+                    Response::json(['error' => 'Écriture comptable scellée (VALIDATED). Modification interdite.'], 403);
+                    exit;
+                }
+
                 foreach ($schema['fields'] as $field => $spec) {
                     if (array_key_exists($field, $body)) {
                         $item[$field] = CrudController::cast($body[$field], $spec);
@@ -445,6 +592,23 @@ class CrudController {
     public function delete(Request $request, $table, $id) {
         $schema = self::schemaFor($table);
         AuthMiddleware::authorize($request, 'GERANT');
+
+        // --- PISTE D'AUDIT COMPTABLE (Loi OHADA) ---
+        if ($table === 'accountingEntries') {
+            $entries = Database::getInstance()->getTable($table);
+            $item = null;
+            foreach ($entries as $e) {
+                if (($e[$schema['idKey']] ?? '') === $id) {
+                    $item = $e;
+                    break;
+                }
+            }
+            if ($item && ($item['status'] ?? '') === 'VALIDATED') {
+                Response::json(['error' => 'Écriture comptable scellée (VALIDATED). Suppression interdite.'], 403);
+                exit;
+            }
+        }
+
         $deleted = Database::getInstance()->deleteTableItem($table, $schema['idKey'], $id);
         if (!$deleted) {
             Response::json(['error' => 'Élément non trouvé.'], 404);
