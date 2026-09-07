@@ -78,6 +78,22 @@ export default function CommercialView() {
   const handleAddProject = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
+
+    // === DÉDOUBLONNAGE : détecter si un projet similaire existe déjà ===
+    const normalizedName = newProjectName.trim().toLowerCase().replace(/\s+/g, ' ');
+    const duplicates = projects.filter(p =>
+      p.name.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedName ||
+      p.clientName?.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedName
+    );
+
+    if (duplicates.length > 0) {
+      const dupList = duplicates.map(d => `"${d.name}" (${d.clientName}, ${(d.budget || 0).toLocaleString('fr-FR')} GNF)`).join(', ');
+      const confirmed = window.confirm(
+        `⚠ DOUBLONS DÉTECTÉS (${duplicates.length}) :\n\n${dupList}\n\nUn projet avec ce nom/client existe déjà. Voulez-vous quand même en créer un nouveau ?`
+      );
+      if (!confirmed) return;
+    }
+
     addProject(newProjectName);
     setNewProjectName('');
   };

@@ -205,6 +205,23 @@ export function AccountantExpenses() {
                       </div>
                     </div>
                   )}
+                  {/* Annulation (suppression logique) */}
+                  {exp.status !== 'CANCELLED' && exp.status !== 'PAID' && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Annuler la dépense « ${exp.description} » (${(exp.amountTTC ?? exp.amount ?? 0).toLocaleString('fr-FR')} GNF) ?\n\nLa dépense sera marquée ANNULEE et exclue de tous les calculs.`)) {
+                          updateExpenseStatus(exp.id, 'CANCELLED' as any, 'Annulée par le comptable');
+                        }
+                      }}
+                      className="p-1.5 text-slate-500 hover:bg-slate-100 border border-slate-200 rounded-sm transition-colors"
+                      title="Annuler la dépense"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    </button>
+                  )}
+                  {exp.status === 'CANCELLED' && (
+                    <span className="bg-slate-200 text-slate-500 px-2 py-1 rounded-sm text-xs font-semibold">ANNULÉE</span>
+                  )}
                 </td>
               </tr>
             ))}

@@ -34,7 +34,7 @@ interface AppContextType {
   alertUnpaid: (projectId: string) => Promise<void>;
   cancelProject: (projectId: string) => Promise<void>;
   addExpense: (expense: Omit<Expense, 'id'>) => Promise<void>;
-  updateExpenseStatus: (id: string, status: 'PENDING'|'PAID'|'REJECTED', reason?: string) => Promise<void>;
+  updateExpenseStatus: (id: string, status: 'PENDING'|'PAID'|'REJECTED'|'CANCELLED', reason?: string) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   systemUsers: User[];
   fetchSystemUsers: () => Promise<void>;
@@ -899,7 +899,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { reportError(err, 'Opération'); }
   };
 
-  const updateExpenseStatus = async (id: string, status: 'PENDING' | 'PAID' | 'REJECTED', reason?: string) => {
+  const updateExpenseStatus = async (id: string, status: 'PENDING' | 'PAID' | 'REJECTED' | 'CANCELLED', reason?: string) => {
     const exp = expenses.find(e => e.id === id);
     if (!exp) return;
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, status, rejectionReason: reason } : e));
@@ -972,11 +972,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prospect = prospects.find(p => p.id === id);
     if (!prospect) return undefined;
 
-    // Éviter les doublons de clics ou de drag-and-drop
+    // Garde d'unicité 1 : ce prospect a-t-il déjà été converti ?
     const existingProject = projects.find(p => (p as any).prospectId === id);
     if (existingProject) {
-      await updateProspect(id, { stage: 'GAGNE' }); // S'assurer que le CRM est bien synchronisé
+      await updateProspect(id, { stage: 'GAGNE' });
       return existingProject;
+    }
+
+    // Garde d'unicité 2 : existe-t-il déjà un projet pour CE client ?
+    const normalizedName = prospect.name.trim().toLowerCase().replace(/\s+/g, ' ');
+    const sameClient = projects.filter(p =>
+      p.clientName?.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedName ||
+      p.name.trim().toLowerCase().replace(/\s+/g, ' ').includes(normalizedName)
+    );
+    if (sameClient.length > 0) {
+      const confirmed = window.confirm(
+        `⚠ ATTENTION : ${sameClient.length} projet(s) existe(nt) déjà pour le client « ${prospect.name} » :\n\n${sameClient.map(p => `"${p.name}" (${(p.budget || 0).toLocaleString('fr-FR')} GNF)`).join('\n')}\n\nVoulez-vous créer un projet supplémentaire pour ce client ?`
+      );
+      if (!confirmed) return undefined;
     }
 
     await updateProspect(id, { stage: 'GAGNE' });

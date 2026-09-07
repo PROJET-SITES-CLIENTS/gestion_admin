@@ -8,9 +8,10 @@ import { AccountantTaxes } from './accountant/AccountantTaxes';
 import { AccountantChart } from './accountant/AccountantChart';
 import { AccountantLedger } from './accountant/AccountantLedger';
 import { AccountantAssets } from './accountant/AccountantAssets';
+import { AccountantReceivables } from './accountant/AccountantReceivables';
 
 export default function AccountantView() {
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TREASURY' | 'SALES' | 'EXPENSES' | 'TAXES' | 'CHART' | 'LEDGER' | 'ASSETS'>('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TREASURY' | 'RECEIVABLES' | 'SALES' | 'EXPENSES' | 'TAXES' | 'CHART' | 'LEDGER' | 'ASSETS'>('DASHBOARD');
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 -mx-4 md:-mx-7 -mt-4 md:-mt-7 px-4 md:px-7">
@@ -60,6 +61,14 @@ export default function AccountantView() {
             <Wallet size={16} /> Trésorerie
           </button>
           <button
+            onClick={() => setActiveTab('RECEIVABLES')}
+            className={`px-4 py-2 rounded-sm text-sm font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'RECEIVABLES' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Receipt size={16} /> Créances
+          </button>
+          <button
             onClick={() => setActiveTab('SALES')}
             className={`px-4 py-2 rounded-sm text-sm font-medium transition-colors flex items-center gap-2 ${
               activeTab === 'SALES' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -99,6 +108,7 @@ export default function AccountantView() {
         {activeTab === 'LEDGER' && <AccountantLedger />}
         {activeTab === 'CHART' && <AccountantChart />}
         {activeTab === 'TREASURY' && <AccountantTreasury />}
+        {activeTab === 'RECEIVABLES' && <AccountantReceivables />}
         {activeTab === 'SALES' && <AccountantSales />}
         {activeTab === 'EXPENSES' && <AccountantExpenses />}
         {activeTab === 'ASSETS' && <AccountantAssets />}

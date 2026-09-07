@@ -6,15 +6,23 @@ import { TreasuryAccount, TreasuryAccountType } from '../../types';
 export function AccountantTreasury() {
   const { treasuryAccounts, transactions, addTreasuryAccount } = useApp();
   const [showAddAccount, setShowAddAccount] = useState(false);
-  const [newAcc, setNewAcc] = useState<{name: string, type: TreasuryAccountType}>({ name: '', type: 'BANQUE' });
+  const [newAcc, setNewAcc] = useState<{name: string, type: TreasuryAccountType, balance?: number}>({ name: '', type: 'BANQUE', balance: 0 });
 
   const totalBalance = treasuryAccounts.reduce((acc, curr) => acc + curr.balance, 0);
+  const fmt = (n: number) => (n || 0).toLocaleString('fr-FR');
+
+  // Soldes d'ouverture (début de journée) et flux du jour
+  const today = new Date().toISOString().split('T')[0];
+  const todayTransactions = transactions.filter(t => t.date.split('T')[0] === today);
+  const todayInflow = todayTransactions.filter(t => t.type === 'CREDIT').reduce((s, t) => s + t.amount, 0);
+  const todayOutflow = todayTransactions.filter(t => t.type === 'DEBIT').reduce((s, t) => s + t.amount, 0);
+  const openingBalance = totalBalance - todayInflow + todayOutflow;
 
   const handleAdd = () => {
     if (newAcc.name) {
       addTreasuryAccount(newAcc);
       setShowAddAccount(false);
-      setNewAcc({ name: '', type: 'BANQUE' });
+      setNewAcc({ name: '', type: 'BANQUE', balance: 0 });
     }
   };
 
@@ -30,15 +38,26 @@ export function AccountantTreasury() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-slate-900 text-white p-6 rounded-sm shadow-sm flex flex-col justify-between">
-          <div>
-            <p className="text-slate-400 text-sm font-medium">Solde Global</p>
-            <h3 className="text-3xl font-bold mt-1 font-mono">{totalBalance.toLocaleString()} <span className="text-lg text-slate-400">GNF</span></h3>
-          </div>
-          <Wallet className="self-end text-slate-700 mt-4" size={48} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="card p-5">
+          <p className="label">Solde d'ouverture (ce matin)</p>
+          <p className="font-mono font-bold text-xl text-slate-500">{fmt(openingBalance)} GNF</p>
         </div>
+        <div className="card p-5">
+          <p className="label">Entrées du jour</p>
+          <p className="font-mono font-bold text-xl text-emerald-600">+{fmt(todayInflow)} GNF</p>
+        </div>
+        <div className="card p-5">
+          <p className="label">Sorties du jour</p>
+          <p className="font-mono font-bold text-xl text-rose-600">-{fmt(todayOutflow)} GNF</p>
+        </div>
+        <div className="card p-5 bg-slate-900 text-white">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-400">Solde actuel</p>
+          <p className="font-mono font-bold text-xl mt-1">{fmt(totalBalance)} GNF</p>
+        </div>
+      </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {treasuryAccounts.map(acc => (
           <div key={acc.id} className="bg-white border border-slate-200 p-6 rounded-sm shadow-sm flex flex-col justify-between">
             <div>
@@ -54,21 +73,25 @@ export function AccountantTreasury() {
       </div>
 
       {showAddAccount && (
-        <div className="bg-white p-4 border border-slate-200 rounded-sm shadow-sm flex items-end gap-4">
-          <div className="flex-1">
+        <div className="bg-white p-4 border border-slate-200 rounded-sm shadow-sm flex flex-wrap items-end gap-4">
+          <div className="flex-1 min-w-[160px]">
             <label className="block text-xs font-medium text-slate-600 mb-1">Nom du compte</label>
-            <input type="text" value={newAcc.name} onChange={e => setNewAcc({...newAcc, name: e.target.value})} className="w-full border-slate-300 rounded-sm text-sm" placeholder="Ex: Ecobank Principal" />
+            <input type="text" value={newAcc.name} onChange={e => setNewAcc({...newAcc, name: e.target.value})} className="input" placeholder="Ex: Ecobank Principal" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-[140px]">
             <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
-            <select value={newAcc.type} onChange={e => setNewAcc({...newAcc, type: e.target.value as TreasuryAccountType})} className="w-full border-slate-300 rounded-sm text-sm">
+            <select value={newAcc.type} onChange={e => setNewAcc({...newAcc, type: e.target.value as TreasuryAccountType})} className="input">
               <option value="BANQUE">Banque</option>
               <option value="CAISSE">Caisse (Espèces)</option>
               <option value="MOBILE_MONEY">Mobile Money</option>
             </select>
           </div>
-          <button onClick={handleAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-sm text-sm font-medium">Créer</button>
-          <button onClick={() => setShowAddAccount(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-sm text-sm font-medium">Annuler</button>
+          <div className="min-w-[160px]">
+            <label className="block text-xs font-medium text-slate-600 mb-1">Solde initial (GNF)</label>
+            <input type="number" min={0} value={newAcc.balance || ''} onChange={e => setNewAcc({...newAcc, balance: Number(e.target.value)})} className="input font-mono" placeholder="Ex: 5000000" />
+          </div>
+          <button onClick={handleAdd} className="btn btn-primary">Créer</button>
+          <button onClick={() => setShowAddAccount(false)} className="btn btn-ghost">Annuler</button>
         </div>
       )}
 

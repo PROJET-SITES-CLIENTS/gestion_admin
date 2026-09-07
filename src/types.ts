@@ -173,7 +173,7 @@ export interface Expense {
   amount?: number;
   description: string;
   date: string;
-  status: 'PENDING' | 'PAID' | 'REJECTED';
+  status: 'PENDING' | 'PAID' | 'REJECTED' | 'CANCELLED';
   rejectionReason?: string;
   accountId?: string; // Compte utilisé pour le paiement
   attachmentUrl?: string; // New: Proof of purchase
