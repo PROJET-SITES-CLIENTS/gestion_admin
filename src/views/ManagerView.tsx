@@ -8,7 +8,10 @@ import { ProjectFilterBar } from '../components/ProjectFilterBar';
 import { BtpPermissionsMatrix } from '../components/BtpPermissionsMatrix';
 
 export default function ManagerView() {
-  const { projects, deleteProject, createUser, systemUsers, fetchSystemUsers, deleteUser, prospects, deleteProspect, activeMenu, companyConfig, updateCompanyConfig, expenses, tasks, notifications, leaveRequests, employees, treasuryAccounts } = useApp();
+  const { projects, deleteProject, createUser, systemUsers, fetchSystemUsers, deleteUser, prospects, deleteProspect, activeMenu, companyConfig, updateCompanyConfig, expenses, tasks, notifications, leaveRequests, employees, treasuryAccounts,
+    // SYNERGIE C : données BTP intégrées au dashboard gérant
+    btpChantiers, btpChantierStats, btpSituations, btpOffres,
+  } = useApp();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function ManagerView() {
   const expectedRevenue = projects.filter(p => p.status !== 'ANNULE').reduce((acc, p) => acc + (p.budget || 0), 0);
   // CA réellement encaissé = somme des échéances PAYÉES (pas le budget complet
   // dès le premier acompte — l'ancien code comptait 100% dès accountantPaymentConfirm)
-  const securedRevenue = projects.reduce((acc, p) => {
+  const coreRevenue = projects.reduce((acc, p) => {
     if (p.paymentStatus !== 'PAID' && !p.accountantPaymentConfirm) return acc;
     const paid = (p.paymentPlan?.installments || [])
       .filter(i => i.status === 'PAID')
@@ -41,6 +44,15 @@ export default function ManagerView() {
     // Si pas de plan : fallback sur budget si complètement payé
     return acc + (paid > 0 ? paid : (p.paymentStatus === 'PAID' ? (p.budget || 0) : 0));
   }, 0);
+
+  // ══════════════════════════════════════════════════════════
+  // SYNERGIE C : CA BTP encaissé (situations facturées) intégré
+  // au dashboard gérant — le Core et le BTP font UN bloc
+  // ══════════════════════════════════════════════════════════
+  const btpRevenue = (btpChantierStats || []).reduce((acc, s) => acc + (s.montant_situations_facturees || 0), 0);
+  const securedRevenue = coreRevenue + btpRevenue;
+  const btpChantiersActifs = (btpChantiers || []).filter(c => ['en_cours', 'réception_provisoire'].includes(c.statut)).length;
+  const btpRetenuesBloquees = (btpChantierStats || []).reduce((acc, s) => acc + (s.retenue_bloquee || 0), 0);
 
   const { filters, setFilters, filteredProjects: hookFilteredProjects } = useProjectFilter(projects);
 
@@ -123,6 +135,11 @@ export default function ManagerView() {
                 <span className="ml-1.5 text-[11px] font-sans font-medium text-slate-400">GNF</span>
               </p>
               <p className="mt-1.5 text-[11px] text-slate-400">sur {expectedRevenue.toLocaleString('fr-FR')} GNF attendus</p>
+              {btpRevenue > 0 && (
+                <p className="mt-1 text-[10.5px] text-indigo-600 font-semibold">
+                  dont BTP : {btpRevenue.toLocaleString('fr-FR')} GNF ({btpChantiersActifs} chantiers)
+                </p>
+              )}
             </div>
             <div className="card card-hover p-5 relative overflow-hidden">
               <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gradient-to-br from-rose-400/70 to-transparent opacity-[0.07] blur-xl" />

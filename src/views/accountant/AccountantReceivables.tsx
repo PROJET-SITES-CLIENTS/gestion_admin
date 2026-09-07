@@ -16,6 +16,8 @@ export function AccountantReceivables() {
   const {
     projects, treasuryAccounts, addTransaction, pushToast,
     addNotification, companyConfig,
+    // SYNERGIE D : inclure les chantiers BTP dans les créances
+    btpChantiers, btpChantierStats, btpSituations, btpReserves,
   } = useApp();
 
   const [showPayment, setShowPayment] = useState<string | null>(null);
@@ -25,8 +27,10 @@ export function AccountantReceivables() {
 
   const fmt = (n: number) => (n || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 });
 
-  // Calculer les créances : budget - total encaissé
-  const receivables = projects
+  // ══════════════════════════════════════════════════════════
+  // Créances CORE : projets (budget - échéances payées)
+  // ══════════════════════════════════════════════════════════
+  const coreReceivables = projects
     .filter(p => p.status !== 'ANNULE')
     .map(p => {
       const paidFromPlan = (p.paymentPlan?.installments || [])
@@ -38,13 +42,52 @@ export function AccountantReceivables() {
       const overdue = !isFullyPaid && remaining > 0 && p.paymentPlan?.installments?.some(i =>
         i.status === 'PENDING' && new Date(i.expectedDate) < new Date()
       );
-      return { ...p, paidFromPlan, remaining, isFullyPaid, overdue };
+      return { ...p, source: 'core' as const, paidFromPlan, remaining, isFullyPaid, overdue };
     })
-    .filter(p => p.budget > 0)
-    .sort((a, b) => b.remaining - a.remaining);
+    .filter(p => p.budget > 0);
+
+  // ══════════════════════════════════════════════════════════
+  // SYNERGIE D : Créances BTP (chantiers : budget - situations facturées)
+  // Le comptable voit maintenant l'argent réel dû par les clients BTP
+  // ══════════════════════════════════════════════════════════
+  const btpReceivables = (btpChantiers || [])
+    .filter(c => !['clôturé', 'réception_définitive'].includes(c.statut))
+    .map(c => {
+      const stat = (btpChantierStats || []).find(s => s.id === c.id);
+      const factured = stat?.montant_situations_facturees || 0;
+      const enAttente = stat?.montant_situations_attente || 0;
+      const budget = c.budget_initial || 0;
+      const remaining = Math.max(0, budget - factured);
+      const rgBloquee = stat?.retenue_bloquee || 0;
+      const isFullyPaid = remaining === 0 && enAttente === 0;
+      // Retard : situations en attente dont l'échéance est dépassée
+      const overdue = enAttente > 0 && (btpSituations || []).some(s =>
+        s.chantier_id === c.id && s.statut === 'en_attente_facturation'
+      );
+      const reservesOuvertes = (btpReserves || []).filter(r => r.chantier_id === c.id && !['levée', 'levee', 'annulée', 'annulee'].includes(r.statut)).length;
+      return {
+        ...c,
+        source: 'btp' as const,
+        clientName: c.client,
+        name: c.nom,
+        budget,
+        paidFromPlan: factured,
+        remaining,
+        isFullyPaid,
+        overdue,
+        rgBloquee,
+        enAttente,
+        reservesOuvertes,
+      };
+    })
+    .filter(c => c.budget > 0);
+
+  // Fusionner et trier
+  const receivables = [...coreReceivables, ...btpReceivables].sort((a, b) => b.remaining - a.remaining);
 
   const totalReceivable = receivables.filter(r => !r.isFullyPaid).reduce((s, r) => s + r.remaining, 0);
   const overdueCount = receivables.filter(r => r.overdue).length;
+  const totalRgBloquee = btpReceivables.reduce((s, r) => s + (r as any).rgBloquee, 0);
   const selectedProject = receivables.find(r => r.id === showPayment);
 
   const handleRecordPayment = async () => {
@@ -108,7 +151,7 @@ export function AccountantReceivables() {
           </h2>
           <p className="text-[13px] text-slate-500 mt-1">Suivi des soldes clients, enregistrement d'acomptes et relances.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <div className="card p-4">
             <p className="label">Total à recouvrer</p>
             <p className="font-mono font-bold text-lg text-indigo-600">{fmt(totalReceivable)} GNF</p>
@@ -117,6 +160,18 @@ export function AccountantReceivables() {
             <p className="label">Échéances dépassées</p>
             <p className={`font-mono font-bold text-lg ${overdueCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{overdueCount}</p>
           </div>
+          {totalRgBloquee > 0 && (
+            <div className="card p-4">
+              <p className="label">RG bloquées (BTP)</p>
+              <p className="font-mono font-bold text-lg text-amber-600">{fmt(totalRgBloquee)} GNF</p>
+            </div>
+          )}
+          {btpReceivables.length > 0 && (
+            <div className="card p-4">
+              <p className="label">Chantiers BTP</p>
+              <p className="font-mono font-bold text-lg text-blue-600">{btpReceivables.filter(r => !r.isFullyPaid).length}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -125,7 +180,8 @@ export function AccountantReceivables() {
         <table className="table-premium w-full min-w-[800px]">
           <thead>
             <tr>
-              <th>Projet</th>
+              <th>Source</th>
+              <th>Projet / Chantier</th>
               <th>Client</th>
               <th className="text-right">Budget</th>
               <th className="text-right">Encaissé</th>
@@ -136,21 +192,32 @@ export function AccountantReceivables() {
           </thead>
           <tbody>
             {receivables.length === 0 && (
-              <tr><td colSpan={7} className="p-8 text-center text-slate-400">Aucun projet avec budget.</td></tr>
+              <tr><td colSpan={8} className="p-8 text-center text-slate-400">Aucun projet avec budget.</td></tr>
             )}
             {receivables.map(r => (
               <tr key={r.id} className={r.overdue ? 'bg-rose-50/30' : ''}>
+                <td>
+                  <span className={`badge ${(r as any).source === 'btp' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                    {(r as any).source === 'btp' ? '🏗 BTP' : 'Core'}
+                  </span>
+                </td>
                 <td className="font-semibold text-slate-800">{r.name}</td>
                 <td className="text-slate-600">{r.clientName}</td>
                 <td className="text-right font-mono">{fmt(r.budget)}</td>
                 <td className="text-right font-mono text-emerald-600">{fmt(r.paidFromPlan)}</td>
                 <td className={`text-right font-mono font-bold ${r.remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                   {r.isFullyPaid ? '— Soldé' : fmt(r.remaining)}
+                  {(r as any).rgBloquee > 0 && (
+                    <span className="block text-[9.5px] text-amber-600 font-normal">RG : {fmt((r as any).rgBloquee)}</span>
+                  )}
                 </td>
                 <td>
                   {r.isFullyPaid ? <Badge tone="emerald">Soldé</Badge>
                     : r.overdue ? <Badge tone="rose"><AlertTriangle size={10} className="mr-1" />En retard</Badge>
                     : <Badge tone="amber"><Clock size={10} className="mr-1" />En attente</Badge>}
+                  {(r as any).source === 'btp' && (r as any).enAttente > 0 && (
+                    <span className="block text-[9.5px] text-slate-400 mt-1">Situations : {fmt((r as any).enAttente)}</span>
+                  )}
                 </td>
                 <td className="text-center">
                   <div className="flex justify-center gap-1.5">

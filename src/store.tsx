@@ -1574,6 +1574,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...(budgetDetail ? { budget_detail: budgetDetail } : {})
         } as any);
         await addNotification('COND_TRAVAUX', `Nouveau chantier gagné: ${o.objet}. Veuillez planifier les ressources.`, 'SUCCESS');
+
+        // ══════════════════════════════════════════════════════════
+        // SYNERGIE A : Refermer le prospect CRM automatiquement
+        // quand l'offre BTP est gagnée → le CRM et le BTP sont
+        // synchronisés (une seule source de vérité)
+        // ══════════════════════════════════════════════════════════
+        if ((o as any).prospect_id) {
+          const prospect = prospects.find(p => p.id === (o as any).prospect_id);
+          if (prospect && prospect.stage !== 'GAGNE') {
+            await updateProspect((o as any).prospect_id, {
+              stage: 'GAGNE',
+              history: [...(prospect.history || []), {
+                id: Date.now().toString(),
+                date: new Date().toISOString(),
+                action: `Affaire gagnée via BTP — Marché ${numeroMAR} créé (montant : ${o.montant_estime.toLocaleString('fr-FR')} GNF)`,
+                user: currentUser?.username || 'system',
+              }],
+            });
+          }
+        }
       }
     }
   };
@@ -1760,7 +1780,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTreasuryAccounts(prev => prev.map(acc =>
           acc.id === accountId ? { ...acc, balance: acc.balance + d.transaction.amount } : acc
         ));
-        pushToast(`Situation facturée : ${d.transaction.amount.toLocaleString('fr-FR')} GNF encaissés.`, 'SUCCESS');
+
+        // ══════════════════════════════════════════════════════════
+        // SYNERGIE B : Écriture comptable VENTE (SYSCOHADA 701/443)
+        // Les situations BTP facturées alimentent le grand livre
+        // et la TVA collectée — sans ça, la TVA BTP est invisible
+        // dans la déclaration fiscale
+        // ══════════════════════════════════════════════════════════
+        await autoGenerateAccountingEntry('VENTE', d.transaction.amount, `Situation BTP — ${d.chantier_nom || situationId.slice(0, 8)}`);
+
+        pushToast(`Situation facturée : ${d.transaction.amount.toLocaleString('fr-FR')} GNF encaissés (écriture comptable générée).`, 'SUCCESS');
         return true;
       }
       pushToast(await readApiError(res, 'Facturation impossible'), 'ERROR');
