@@ -5,6 +5,7 @@ import { Badge, statusTone, Progress, Modal } from '../../components/ui';
 import { openSecureFile } from '../../utils/secureFile';
 import { generateOsPDF, generatePvPDF } from '../../utils/pdfGenerator';
 import { BtpLotsSection } from '../../components/BtpLotsSection';
+import { BtpClosureChecklist, BtpLotPilotage, BtpSTEvaluation } from '../../components/BtpClosure';
 import {
   Wallet, Users, Clock, FileText, Upload, Plus, CheckCircle2, AlertTriangle,
   FileSignature, ShieldCheck, Truck, Download, XCircle, Ban,
@@ -54,6 +55,7 @@ export const BtpChantiersView = () => {
   const [newAvenant, setNewAvenant] = useState({ type: 'montant' as BtpAvenant['type'], objet: '', montant: 0, jours_delai: 0 });
   // Sous-traitance
   const [newST, setNewST] = useState({ entreprise: '', objet: '', montant: 0 });
+  const [stEvalId, setStEvalId] = useState<string | null>(null);
   // Cautionnement
   const [newCaut, setNewCaut] = useState({ type: 'bonne_execution' as BtpCautionnementsLocal['type'], assureur_banque: '', montant: 0 });
   // Réserves (Réception)
@@ -798,6 +800,9 @@ export const BtpChantiersView = () => {
                 )}
               </div>
 
+              {/* ---- P3-1 : CHECKLIST DE CLÔTURE FORMELLE ---- */}
+              <BtpClosureChecklist chantierId={selectedChantier.id} onClosure={() => {}} />
+
               {/* ---- OS + Sous-traitance + Cautionnements ---- */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {/* OS */}
@@ -831,14 +836,8 @@ export const BtpChantiersView = () => {
                         <div className="flex justify-between items-center mt-1">
                           <span className="text-[10px] text-slate-400 truncate">{st.objet}</span>
                           {st.statut === 'en_cours' && currentRole === 'GERANT' && (
-                            <button 
-                              onClick={() => {
-                                const rating = prompt(`Note d'évaluation pour ${st.entreprise} (sur 5) :\n(Critères: Qualité, Délais, Sécurité)`);
-                                if(rating) {
-                                  solderBtpSousTraitance(st.id);
-                                  pushToast(`Sous-traitant évalué à ${rating}/5 et contrat soldé.`, 'SUCCESS');
-                                }
-                              }} 
+                            <button
+                              onClick={() => setStEvalId(st.id)}
                               className="text-[9.5px] font-bold text-emerald-600 uppercase border border-emerald-200 px-1.5 py-0.5 rounded hover:bg-emerald-50"
                             >
                               Évaluer & Solder
@@ -977,6 +976,9 @@ export const BtpChantiersView = () => {
               {/* ---- LOTS & TÂCHES (CDC : découpage hiérarchique) ---- */}
               <BtpLotsSection chantierId={selectedChantier.id} />
 
+              {/* ---- P3-2 : PILOTAGE PAR LOT ---- */}
+              <BtpLotPilotage chantierId={selectedChantier.id} />
+
               {/* ---- GED ---- */}
               <div className="card p-6">
                 <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-slate-700 mb-4 flex items-center gap-2">
@@ -1066,6 +1068,32 @@ export const BtpChantiersView = () => {
           )}
         </div>
       </div>
+
+      {/* P3-3 : Évaluation sous-traitant structurée */}
+      <Modal
+        open={!!stEvalId}
+        onClose={() => setStEvalId(null)}
+        title="Évaluation du sous-traitant"
+        subtitle="Notation multi-critères pondérée (CDC §12)"
+      >
+        {stEvalId && (() => {
+          const st = btpSousTraitances.find(s => s.id === stEvalId);
+          if (!st) return null;
+          return (
+            <BtpSTEvaluation
+              sousTraitanceId={st.id}
+              entreprise={st.entreprise}
+              onEvaluate={(notes: Record<string, number>, commentaire: string) => {
+                solderBtpSousTraitance(st.id);
+                const values = Object.values(notes) as number[];
+                const noteGlobale = values.reduce((s: number, n: number) => s + n, 0) / values.length;
+                pushToast(`« ${st.entreprise} » évalué à ${noteGlobale.toFixed(1)}/5 et contrat soldé.`, 'SUCCESS');
+                setStEvalId(null);
+              }}
+            />
+          );
+        })()}
+      </Modal>
 
       {showOffreModal && selectedChantier?.offre_id && (
         <Modal title="Détail du Devis Initial" onClose={() => setShowOffreModal(false)} size="lg">
