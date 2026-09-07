@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Project, User, Role, CompanyConfig, Expense, ProjectStatus, AuthResponse, Prospect, TreasuryAccount, Transaction, BtpOffre, BtpChantier, BtpJournalChantier, BtpIncidentQHSE, BtpEngin, BtpSituationTravaux, BtpOffreStatus, BtpChantierStatus, BtpEnginStatus, BtpAffectation, BtpPointage, BtpArticle, BtpBonCommande, BtpMouvement, BtpDocument, BtpChantierStat, BtpEmployeeDirectoryEntry, BtpAvenant, BtpOrdreService, BtpSousTraitance, BtpFournisseur, BtpCautionnement, BtpInspection, BtpPrixUnitaire, BtpHeureEngin, LotMatierePremiere, AgroMatierePremiereStatus, LotProduction, AgroProductionStatus, ControleQualiteProcess, CommandeClientAgro, AgroCommandeStatus, LigneCommandeLotLivre, FicheTracabilite, ReclamationClient, AgroReclamationStatus, Task, AppNotification, CalendarEvent, ServiceCatalogItem, ServiceProposal, BtpReserve, BtpHabilitation } from './types';
+import { Project, User, Role, CompanyConfig, Expense, ProjectStatus, AuthResponse, Prospect, TreasuryAccount, Transaction, BtpOffre, BtpChantier, BtpJournalChantier, BtpIncidentQHSE, BtpEngin, BtpSituationTravaux, BtpOffreStatus, BtpChantierStatus, BtpEnginStatus, BtpAffectation, BtpPointage, BtpArticle, BtpBonCommande, BtpMouvement, BtpDocument, BtpChantierStat, BtpEmployeeDirectoryEntry, BtpAvenant, BtpOrdreService, BtpSousTraitance, BtpFournisseur, BtpCautionnement, BtpInspection, BtpPrixUnitaire, BtpHeureEngin, LotMatierePremiere, AgroMatierePremiereStatus, LotProduction, AgroProductionStatus, ControleQualiteProcess, CommandeClientAgro, AgroCommandeStatus, LigneCommandeLotLivre, FicheTracabilite, ReclamationClient, AgroReclamationStatus, Task, AppNotification, CalendarEvent, ServiceCatalogItem, ServiceProposal, BtpReserve, BtpHabilitation, BtpMarche, BtpLot, BtpTache } from './types';
 import { apiFetch, getAuthToken, readApiError } from './apiClient';
 
 export interface Toast {
@@ -176,6 +176,17 @@ interface AppContextType {
   createBtpPrixUnitaire: (p: Omit<BtpPrixUnitaire, 'id'>) => Promise<void>;
   btpHeuresEngins: BtpHeureEngin[];
   createBtpHeureEngin: (h: Omit<BtpHeureEngin, 'id' | 'created_by'>) => Promise<void>;
+  // Nouvelles entités CDC
+  btpMarches: BtpMarche[];
+  createBtpMarche: (m: Omit<BtpMarche, 'id' | 'statut' | 'created_by'>) => Promise<void>;
+  updateBtpMarche: (id: string, updates: Partial<BtpMarche>) => Promise<void>;
+  signerBtpMarche: (id: string) => Promise<void>;
+  btpLots: BtpLot[];
+  createBtpLot: (l: Omit<BtpLot, 'id' | 'statut' | 'avancement_pct' | 'created_by'>) => Promise<void>;
+  updateBtpLot: (id: string, updates: Partial<BtpLot>) => Promise<void>;
+  btpTaches: BtpTache[];
+  createBtpTache: (t: Omit<BtpTache, 'id' | 'statut' | 'avancement_pct' | 'priorite' | 'created_by'>) => Promise<void>;
+  updateBtpTache: (id: string, updates: Partial<BtpTache>) => Promise<void>;
   validerRhChantier: (id: string) => Promise<void>;
   updateBtpEngin: (id: string, updates: Partial<BtpEngin>) => Promise<void>;
   libererCautionnement: (id: string) => Promise<void>;
@@ -290,6 +301,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [btpInspections, setBtpInspections] = useState<BtpInspection[]>([]);
   const [btpPrixUnitaires, setBtpPrixUnitaires] = useState<BtpPrixUnitaire[]>([]);
   const [btpHeuresEngins, setBtpHeuresEngins] = useState<BtpHeureEngin[]>([]);
+
+  // NOUVELLES ENTITÉS CDC : Marchés, Lots, Tâches
+  const [btpMarches, setBtpMarches] = useState<BtpMarche[]>([]);
+  const [btpLots, setBtpLots] = useState<BtpLot[]>([]);
+  const [btpTaches, setBtpTaches] = useState<BtpTache[]>([]);
 
   // Agro States
   const [agroLotMatierePremieres, setAgroLotMatierePremieres] = useState<LotMatierePremiere[]>([]);
@@ -556,6 +572,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setBtpInspections(data.btpInspections || []);
         setBtpPrixUnitaires(data.btpPrixUnitaires || []);
         setBtpHeuresEngins(data.btpHeuresEngins || []);
+        setBtpMarches(data.btpMarches || []);
+        setBtpLots(data.btpLots || []);
+        setBtpTaches(data.btpTaches || []);
 
         // Agro Data
         setAgroLotMatierePremieres(data.agroLotMatierePremieres || []);
@@ -1432,8 +1451,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Le chiffrage validé devient le budget prévisionnel du chantier.
         let budgetDetail: any = undefined;
         try { budgetDetail = o.chiffrage_json ? JSON.parse(o.chiffrage_json) : undefined; } catch { /* chiffrage illisible : ignoré */ }
+
+        // CDC : créer automatiquement un marché brouillon lié à cette offre
+        const tvaRate = (companyConfig?.tvaRate || 18);
+        const montantHT = o.montant_estime;
+        const montantTTC = Math.round(montantHT * (1 + tvaRate / 100));
+        const year = new Date().getFullYear();
+        const counters = companyConfig?.docCounters || {};
+        const nextMAR = ((counters as any)[`MAR_${year}`] || 0) + 1;
+        const numeroMAR = `MAR-${year}-${String(nextMAR).padStart(3, '0')}`;
+
+        const marche = await crudCreate<BtpMarche>('btpMarches', {
+          numero: numeroMAR,
+          offre_id: o.id,
+          client_nom: o.client,
+          objet: o.objet,
+          montant_ht: montantHT,
+          tva_rate: tvaRate,
+          montant_ttc: montantTTC,
+          statut: 'brouillon',
+        }, 'Création marché auto');
+        if (marche) setBtpMarches(prev => [...prev, marche]);
+
         await createBtpChantier({
           offre_id: o.id,
+          marche_id: marche?.id,
           nom: `Chantier - ${o.objet}`,
           client: o.client,
           adresse: 'A définir',
@@ -1832,6 +1874,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createBtpHeureEngin = async (h: Omit<BtpHeureEngin, 'id' | 'created_by'>) => {
     const created = await crudCreate<BtpHeureEngin>('btpHeuresEngins', h, 'Heures engin');
     if (created) setBtpHeuresEngins(prev => [...prev, created]);
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // NOUVELLES ENTITÉS CDC : Marchés, Lots, Tâches
+  // ══════════════════════════════════════════════════════════════
+
+  // --- MARCHÉS ---
+  const createBtpMarche = async (m: Omit<BtpMarche, 'id' | 'statut' | 'created_by'>) => {
+    // Numérotation légale
+    const year = new Date().getFullYear();
+    const counters = companyConfig?.docCounters || {};
+    const next = ((counters as any)[`MAR_${year}`] || 0) + 1;
+    const numero = `MAR-${year}-${String(next).padStart(3, '0')}`;
+    const created = await crudCreate<BtpMarche>('btpMarches', { ...m, numero }, 'Création marché');
+    if (created) {
+      setBtpMarches(prev => [...prev, created]);
+      updateCompanyConfig({ ...companyConfig, docCounters: { ...counters, [`MAR_${year}`]: next } } as any);
+      await addNotification('GERANT', `Marché ${numero} créé pour « ${m.client_nom} » (${m.montant_ttc.toLocaleString('fr-FR')} GNF TTC).`, 'INFO');
+    }
+  };
+
+  const updateBtpMarche = async (id: string, updates: Partial<BtpMarche>) => {
+    const updated = await crudUpdate('btpMarches', id, updates, 'Mise à jour marché');
+    if (updated) setBtpMarches(prev => prev.map(m => m.id === id ? updated : m));
+  };
+
+  const signerBtpMarche = async (id: string) => {
+    const updated = await crudUpdate('btpMarches', id, {
+      statut: 'signe',
+      date_signature: new Date().toISOString(),
+    }, 'Signature marché');
+    if (updated) {
+      setBtpMarches(prev => prev.map(m => m.id === id ? updated : m));
+      await addNotification('COND_TRAVAUX', `Marché ${updated.numero} signé — chantier(s) à créer.`, 'SUCCESS');
+    }
+  };
+
+  // --- LOTS ---
+  const createBtpLot = async (l: Omit<BtpLot, 'id' | 'statut' | 'avancement_pct' | 'created_by'>) => {
+    const created = await crudCreate<BtpLot>('btpLots', l, 'Création lot');
+    if (created) setBtpLots(prev => [...prev, created]);
+  };
+
+  const updateBtpLot = async (id: string, updates: Partial<BtpLot>) => {
+    const updated = await crudUpdate('btpLots', id, updates, 'Mise à jour lot');
+    if (updated) setBtpLots(prev => prev.map(l => l.id === id ? updated : l));
+  };
+
+  // --- TÂCHES WBS ---
+  const createBtpTache = async (t: Omit<BtpTache, 'id' | 'statut' | 'avancement_pct' | 'priorite' | 'created_by'>) => {
+    const created = await crudCreate<BtpTache>('btpTaches', t, 'Création tâche');
+    if (created) setBtpTaches(prev => [...prev, created]);
+  };
+
+  const updateBtpTache = async (id: string, updates: Partial<BtpTache>) => {
+    const updated = await crudUpdate('btpTaches', id, updates, 'Mise à jour tâche');
+    if (updated) setBtpTaches(prev => prev.map(t => t.id === id ? updated : t));
   };
 
   // --- AGRO METHODS (persistées via /api/crud/*) ---
@@ -2271,6 +2370,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createBtpPrixUnitaire,
       btpHeuresEngins,
       createBtpHeureEngin,
+      btpMarches, createBtpMarche, updateBtpMarche, signerBtpMarche,
+      btpLots, createBtpLot, updateBtpLot,
+      btpTaches, createBtpTache, updateBtpTache,
       validerRhChantier,
       updateBtpEngin,
       libererCautionnement,
@@ -2318,7 +2420,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pushToast,
       dismissToast
   }), [
-      projects, clients, expenses, currentRole, currentUser, companyConfig, isReady, systemUsers, prospects, catalogue, proposals, activeMenu, internalMessages, employees, contracts, leaveRequests, payslips, treasuryAccounts, transactions, tasks, notifications, btpOffres, btpChantiers, btpEngins, btpIncidents, btpJournaux, btpSituations, btpAffectations, btpPointages, btpArticles, btpBonCommandes, btpMouvements, btpDocuments, btpChantierStats, btpEmployeeDirectory, btpAvenants, btpOrdresService, btpSousTraitances, btpFournisseurs, btpCautionnements, btpInspections, btpPrixUnitaires, btpHeuresEngins, btpReserves, btpHabilitations,
+      projects, clients, expenses, currentRole, currentUser, companyConfig, isReady, systemUsers, prospects, catalogue, proposals, activeMenu, internalMessages, employees, contracts, leaveRequests, payslips, treasuryAccounts, transactions, tasks, notifications, btpOffres, btpChantiers, btpEngins, btpIncidents, btpJournaux, btpSituations, btpAffectations, btpPointages, btpArticles, btpBonCommandes, btpMouvements, btpDocuments, btpChantierStats, btpEmployeeDirectory, btpAvenants, btpOrdresService, btpSousTraitances, btpFournisseurs, btpCautionnements, btpInspections, btpPrixUnitaires, btpHeuresEngins, btpReserves, btpHabilitations, btpMarches, btpLots, btpTaches,
       createBtpReserve, updateBtpReserve, createBtpHabilitation, updateBtpHabilitation, agroLotMatierePremieres, agroLotProductions, agroControles, agroCommandes, agroLignesLivrees, agroFiches, agroReclamations, agendaEvents, accountingAccounts, accountingJournals, accountingEntries, assets, toasts,
       assistantTasks, assistantMeetings, assistantDocuments, assistantContacts, assistantTravels, crudCreate, crudUpdate, crudDelete
   ]);

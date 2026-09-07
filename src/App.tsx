@@ -45,6 +45,7 @@ function GlobalErrorFallback({ error, resetErrorBoundary }: any) {
 import InternalMessenger from './components/InternalMessenger';
 import TaskBoard from './components/TaskBoard';
 import { BtpDashboardView } from './views/btp/BtpDashboardView';
+import { BtpMarchesView } from './views/btp/BtpMarchesView';
 import { BtpOffresView } from './views/btp/BtpOffresView';
 import { BtpChantiersView } from './views/btp/BtpChantiersView';
 import { BtpEnginsView } from './views/btp/BtpEnginsView';
@@ -100,6 +101,7 @@ function AppContent() {
       case 'TASKS': return <TaskBoard />;
       case 'BTP_DASHBOARD': return <BtpDashboardView />;
       case 'BTP_MAGASIN': return <BtpMagasinView />;
+      case 'BTP_MARCHES': return <BtpMarchesView />;
       case 'BTP_OFFRES': return <BtpOffresView />;
       case 'BTP_CHANTIERS': return <BtpChantiersView />;
       case 'BTP_ENGINS': return <BtpEnginsView />;

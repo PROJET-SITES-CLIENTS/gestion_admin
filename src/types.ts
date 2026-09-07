@@ -557,8 +557,11 @@ export interface BtpOffre {
 export interface BtpChantier {
   id: string;
   offre_id?: string;
+  /** FK vers le marché signé (chaîne CDC : Affaire → Marché → Projet → Chantier) */
+  marche_id?: string;
   nom: string;
   client: string;
+  client_id?: string;
   adresse: string;
   date_debut_prevue: string;
   date_fin_prevue?: string;
@@ -576,6 +579,85 @@ export interface BtpChantier {
   retenue_garantie_pct?: number;
   /** Pénalité de retard contractuelle (GNF/jour de retard). */
   penalite_journaliere?: number;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// NOUVELLES ENTITÉS CDC — Marché, Lot, Tâche (chaîne hiérarchique)
+// ══════════════════════════════════════════════════════════════════
+
+export type BtpMarcheStatus =
+  | 'brouillon' | 'en_validation' | 'signe' | 'os_recu'
+  | 'en_cours' | 'suspendu' | 'acheve' | 'resilie' | 'cloture';
+
+/**
+ * Marché / Contrat — formalise la relation contractuelle client.
+ * Chaîne : Offre gagnée → Marché signé → Chantier(s) créé(s)
+ */
+export interface BtpMarche {
+  id: string;
+  numero: string;               // MAR-2026-001
+  offre_id?: string;            // FK vers l'offre gagnée
+  client_id?: string;           // FK entité client
+  client_nom: string;
+  objet: string;
+  montant_ht: number;
+  tva_rate: number;
+  montant_ttc: number;
+  date_signature?: string;
+  date_demarrage_prevue?: string;
+  date_fin_prevue?: string;
+  retenue_garantie_pct?: number;
+  penalite_journaliere?: number;
+  conditions_paiement?: string;
+  statut: BtpMarcheStatus;
+  documents?: { nom: string; url?: string; type?: string }[];
+  created_by?: string;
+  createdAt?: string;
+}
+
+export type BtpLotStatus = 'planifie' | 'en_cours' | 'termine' | 'suspendu' | 'annule';
+
+/**
+ * Lot — découpage du chantier par métier, zone ou phase.
+ * Hérite d'un budget propre et d'un avancement indépendant.
+ */
+export interface BtpLot {
+  id: string;
+  chantier_id: string;
+  numero: string;               // LOT-001
+  nom: string;
+  description?: string;
+  responsable_id?: string;      // FK employé
+  budget: number;
+  date_debut?: string;
+  date_fin?: string;
+  avancement_pct: number;
+  statut: BtpLotStatus;
+  created_by?: string;
+}
+
+export type BtpTacheStatus = 'a_faire' | 'en_cours' | 'terminee' | 'bloquee' | 'annulee';
+export type BtpTachePriorite = 'basse' | 'normale' | 'haute' | 'critique';
+
+/**
+ * Tâche WBS — unité de travail atomique sous un lot.
+ * Supporte les dépendances et l'assignation.
+ */
+export interface BtpTache {
+  id: string;
+  lot_id: string;
+  chantier_id: string;          // dénormalisé pour requêtes rapides
+  nom: string;
+  description?: string;
+  assigne_a?: string;           // FK employé
+  date_debut?: string;
+  date_fin?: string;
+  duree_jours?: number;
+  depend_de?: string;           // FK tâche antérieure
+  avancement_pct: number;
+  priorite: BtpTachePriorite;
+  statut: BtpTacheStatus;
+  created_by?: string;
 }
 
 export interface BtpJournalChantier {

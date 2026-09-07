@@ -196,6 +196,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     if (companyConfig.activeModules?.includes('BTP')) {
       items.push(
         { id: 'BTP_DASHBOARD', label: 'Tableau de Bord BTP', group: 'Opérations BTP', icon: <LayoutDashboard size={15} />, run: () => go('BTP_DASHBOARD') },
+        { id: 'BTP_MARCHES', label: 'Marchés & Contrats', group: 'Opérations BTP', icon: <FileText size={15} />, run: () => go('BTP_MARCHES') },
         { id: 'BTP_OFFRES', label: "Appels d'Offres BTP", group: 'Opérations BTP', icon: <Briefcase size={15} />, run: () => go('BTP_OFFRES') },
         { id: 'BTP_CHANTIERS', label: 'Pilotage Chantiers', group: 'Opérations BTP', icon: <HardHat size={15} />, run: () => go('BTP_CHANTIERS') },
         { id: 'BTP_MAGASIN', label: 'Magasin & Approvisionnements', group: 'Opérations BTP', icon: <Truck size={15} />, run: () => go('BTP_MAGASIN') },
@@ -335,6 +336,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           {companyConfig.activeModules?.includes('BTP') && (
             <NavSection title="Opérations BTP">
               <NavItem menu="BTP_DASHBOARD" icon={<LayoutDashboard size={17} />} label="Tableau de Bord" />
+              <NavItem menu="BTP_MARCHES" icon={<FileText size={17} />} label="Marchés" />
               <NavItem menu="BTP_OFFRES" icon={<Briefcase size={17} />} label="Appels d'Offres" />
               <NavItem menu="BTP_CHANTIERS" icon={<HardHat size={17} />} label="Chantiers" />
               <NavItem menu="BTP_MAGASIN" icon={<Truck size={17} />} label="Magasin & Achats" />

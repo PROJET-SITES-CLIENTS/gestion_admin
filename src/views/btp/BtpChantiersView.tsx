@@ -4,6 +4,7 @@ import { BtpChantierStatus, BtpChiffrageLigne, BtpAvenant } from '../../types';
 import { Badge, statusTone, Progress, Modal } from '../../components/ui';
 import { openSecureFile } from '../../utils/secureFile';
 import { generateOsPDF, generatePvPDF } from '../../utils/pdfGenerator';
+import { BtpLotsSection } from '../../components/BtpLotsSection';
 import {
   Wallet, Users, Clock, FileText, Upload, Plus, CheckCircle2, AlertTriangle,
   FileSignature, ShieldCheck, Truck, Download, XCircle, Ban,
@@ -972,6 +973,9 @@ export const BtpChantiersView = () => {
                   </div>
                 </div>
               </div>
+
+              {/* ---- LOTS & TÂCHES (CDC : découpage hiérarchique) ---- */}
+              <BtpLotsSection chantierId={selectedChantier.id} />
 
               {/* ---- GED ---- */}
               <div className="card p-6">

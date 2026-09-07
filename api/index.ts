@@ -158,7 +158,7 @@ const sanitize = (value: any, maxLength: number = 2000): any => {
 // ============================================================
 // CONFIG TABLES CRUD
 // ============================================================
-const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any }> = {
+const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any; userField?: string }> = {
   btpOffres: { roles: ['GERANT','COMMERCIAL','ETUDES','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'], defaults: { statut: 'repérée' } },
   btpChantiers: { roles: ['GERANT','RH','COMMERCIAL','ETUDES','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'], defaults: { statut: 'planification' } },
   btpEngins: { roles: ['GERANT','COMMERCIAL','ETUDES','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'] },
@@ -188,6 +188,24 @@ const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any }> = {
   agroLignesLivrees: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'] },
   agroFiches: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'] },
   agroReclamations: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'], defaults: { statut: 'ouverte' } },
+
+  // ══ NOUVELLES ENTITÉS CDC BTP — Marché, Lot, Tâche ══
+  btpMarches: {
+    roles: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','ASSISTANTE','DEVELOPPEUR'],
+    defaults: { statut: 'brouillon' },
+    userField: 'created_by',
+  },
+  btpLots: {
+    roles: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','ETUDES','DEVELOPPEUR'],
+    defaults: { statut: 'planifie', avancement_pct: 0 },
+    userField: 'created_by',
+  },
+  btpTaches: {
+    roles: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','ETUDES','DEVELOPPEUR'],
+    defaults: { statut: 'a_faire', avancement_pct: 0, priorite: 'normale' },
+    userField: 'created_by',
+  },
+
   agendaEvents: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
   devisRecords: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
   // Tables Assistante (auditées : absentes de l'API Vercel → modules cassés en prod)
@@ -346,7 +364,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       response.tasks = (allData.tasks || []).filter((t: any) => t.receiverRole === role || t.receiverRole === 'ALL' || t.senderId === userId);
       response.notifications = (allData.notifications || []).filter((n: any) => n.targetRole === role || n.targetRole === 'ALL');
 
-      const btpTables = ['btpOffres','btpChantiers','btpEngins','btpIncidents','btpJournaux','btpSituations','btpAffectations','btpPointages','btpArticles','btpBonCommandes','btpMouvements','btpDocuments','btpAvenants','btpOs','btpSousTraitances','btpFournisseurs','btpCautionnements','btpInspections','btpPrixUnitaires','btpHeuresEngins','btpReserves','btpHabilitations'];
+      const btpTables = ['btpOffres','btpChantiers','btpEngins','btpIncidents','btpJournaux','btpSituations','btpAffectations','btpPointages','btpArticles','btpBonCommandes','btpMouvements','btpDocuments','btpAvenants','btpOs','btpSousTraitances','btpFournisseurs','btpCautionnements','btpInspections','btpPrixUnitaires','btpHeuresEngins','btpReserves','btpHabilitations','btpMarches','btpLots','btpTaches'];
       for (const t of btpTables) response[t] = allData[t] || [];
       const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
       for (const t of agroTables) response[t] = allData[t] || [];
