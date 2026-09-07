@@ -53,9 +53,12 @@ export const BtpClosureChecklist: React.FC<{
   const ctx: ClosureContext = {
     chantier,
     stat,
-    heuresNonImputees: btpPointages.filter(p => p.chantier_id === chantierId && !p.validated).length,
+    // BUG 4 FIX : le champ "validated" n'existe pas dans BtpPointage.
+    // Un pointage créé EST imputé (les heures alimentent le P&L via les stats serveur).
+    // On vérifie plutôt qu'il n'y a pas de pointage à 0h (saisie incomplète).
+    heuresNonImputees: btpPointages.filter(p => p.chantier_id === chantierId && (!p.heures || p.heures <= 0)).length,
     facturesNonControlees: expenses.filter(e => e.chantier_id === chantierId && e.status === 'PENDING').length,
-    reservesOuvertes: btpReserves.filter(r => r.chantier_id === chantierId && !['levée', 'annulée'].includes(r.statut)).length,
+    reservesOuvertes: btpReserves.filter(r => r.chantier_id === chantierId && !['levée', 'annulée', 'levee', 'annulee'].includes(r.statut)).length,
     docsFinauxManquants: [],
     materielNonReaffecte: btpEngins.filter(e => e.chantier_affecte_id === chantierId).length,
     lotsNonTermines: btpLots.filter(l => l.chantier_id === chantierId && !['termine', 'annule'].includes(l.statut)).length,

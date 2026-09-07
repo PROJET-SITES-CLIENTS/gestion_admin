@@ -1500,6 +1500,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateBtpOffreStatus = async (id: string, status: BtpOffreStatus, commentaire?: string) => {
+    // ══════════════════════════════════════════════════════════
+    // BUG 2 FIX : Les gardes s'exécutent AVANT la persistance du
+    // statut "gagnée" — sinon une offre à 0 GNF reste coincée.
+    // ══════════════════════════════════════════════════════════
+    if (status === 'gagnée') {
+      const o = btpOffres.find(x => x.id === id);
+      if (!o) return;
+
+      // Garde d'unicité : ne pas créer un 2e chantier si un existe déjà
+      const chantierExistant = btpChantiers.some(c => c.offre_id === id);
+      if (chantierExistant) {
+        pushToast('Un chantier existe déjà pour cette offre.', 'WARNING');
+        return; // Ne pas persister le statut si le chantier existe déjà
+      }
+
+      // Garde montant : refuser budget 0 (offre non chiffrée)
+      if (!o.montant_estime || o.montant_estime <= 0) {
+        pushToast("Impossible : montant estimé à 0. Chiffrez l'offre avant de la déclarer gagnée.", 'ERROR');
+        return; // Ne pas persister le statut si montant = 0
+      }
+    }
+
+    // Maintenant on peut persister le statut
     const updates: Partial<BtpOffre> = { statut: status };
     if (status === 'en_chiffrage' && commentaire) {
       updates.commentaire_validation_financiere = commentaire;
@@ -1510,17 +1533,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (status === 'gagnée') {
       const o = btpOffres.find(x => x.id === id);
       if (o) {
-        // Garde d'unicité : ne pas créer un 2e chantier si un existe déjà
-        const chantierExistant = btpChantiers.some(c => c.offre_id === id);
-        if (chantierExistant) {
-          pushToast('Un chantier existe déjà pour cette offre.', 'WARNING');
-          return;
-        }
-        // Garde montant : refuser budget 0 (offre non chiffrée)
-        if (!o.montant_estime || o.montant_estime <= 0) {
-          pushToast("Impossible : montant estimé à 0. Chiffrez l'offre avant de la déclarer gagnée.", 'ERROR');
-          return;
-        }
         // Le chiffrage validé devient le budget prévisionnel du chantier.
         let budgetDetail: any = undefined;
         try { budgetDetail = o.chiffrage_json ? JSON.parse(o.chiffrage_json) : undefined; } catch { /* chiffrage illisible : ignoré */ }
@@ -1542,9 +1554,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           montant_ht: montantHT,
           tva_rate: tvaRate,
           montant_ttc: montantTTC,
+          retenue_garantie_pct: 5,
           statut: 'brouillon',
         }, 'Création marché auto');
         if (marche) setBtpMarches(prev => [...prev, marche]);
+
+        // BUG 7 FIX : Propager la RG du marché au chantier + incrémenter le compteur MAR
+        updateCompanyConfig({ ...companyConfig, docCounters: { ...counters, [`MAR_${year}`]: nextMAR } } as any);
 
         await createBtpChantier({
           offre_id: o.id,
@@ -1554,6 +1570,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           adresse: 'A définir',
           date_debut_prevue: new Date().toISOString(),
           budget_initial: o.montant_estime,
+          retenue_garantie_pct: 5,
           ...(budgetDetail ? { budget_detail: budgetDetail } : {})
         } as any);
         await addNotification('COND_TRAVAUX', `Nouveau chantier gagné: ${o.objet}. Veuillez planifier les ressources.`, 'SUCCESS');

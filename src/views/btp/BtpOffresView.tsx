@@ -208,7 +208,7 @@ const AddChiffrageLine: React.FC<{
 };
 
 export const BtpOffresView = () => {
-  const { btpOffres, currentRole, createBtpOffre, updateBtpOffreStatus, updateBtpOffre } = useApp();
+  const { btpOffres, currentRole, createBtpOffre, updateBtpOffreStatus, updateBtpOffre, prospects } = useApp();
   const [showCreate, setShowCreate] = useState(false);
   const [newOffre, setNewOffre] = useState({ client: '', objet: '', montant_estime: 0, date_limite_depot: '' });
   const [chiffrageOffre, setChiffrageOffre] = useState<BtpOffre | null>(null);
@@ -273,16 +273,47 @@ export const BtpOffresView = () => {
         <form onSubmit={handleCreate} className="bg-white p-4 rounded shadow mb-6 max-w-xl">
           <h2 className="text-lg font-semibold mb-4">Créer une offre</h2>
           <div className="space-y-4">
-            <input required type="text" placeholder="Client" className="border p-2 w-full rounded" value={newOffre.client} onChange={e => setNewOffre({...newOffre, client: e.target.value})} />
-            <input required type="text" placeholder="Objet de l'appel d'offres" className="border p-2 w-full rounded" value={newOffre.objet} onChange={e => setNewOffre({...newOffre, objet: e.target.value})} />
-            <input required type="number" placeholder="Montant estimé" className="border p-2 w-full rounded" value={newOffre.montant_estime} onChange={e => setNewOffre({...newOffre, montant_estime: Number(e.target.value)})} />
+            {/* BUG 6 FIX : Lien CRM ↔ BTP — sélectionner un prospect pré-remplit l'offre */}
             <div>
-               <label className="block text-xs text-slate-500 mb-1">Date limite de dépôt</label>
-               <input required type="date" className="border p-2 w-full rounded" value={newOffre.date_limite_depot} onChange={e => setNewOffre({...newOffre, date_limite_depot: e.target.value})} />
+              <label className="label">Lier à un prospect CRM (optionnel)</label>
+              <select
+                className="input"
+                value={(newOffre as any).prospect_id || ''}
+                onChange={(e) => {
+                  const pid = e.target.value;
+                  const prospect = prospects.find(p => p.id === pid);
+                  if (prospect) {
+                    setNewOffre({
+                      ...newOffre,
+                      client: prospect.name,
+                      objet: prospect.projectType || `Projet ${prospect.name}`,
+                      montant_estime: prospect.estimatedBudget ? parseInt(prospect.estimatedBudget.replace(/[^0-9]/g, ''), 10) || 0 : 0,
+                      ...(pid ? { prospect_id: pid } as any : {}),
+                    } as any);
+                  } else {
+                    setNewOffre({ ...newOffre, ...( { prospect_id: '' } as any) });
+                  }
+                }}
+              >
+                <option value="">— Saisie manuelle —</option>
+                {prospects.filter(p => p.stage !== 'PERDU').map(p => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.qualification}) — {p.phone}</option>
+                ))}
+              </select>
+              {(newOffre as any).prospect_id && (
+                <p className="text-[11px] text-emerald-600 mt-1">✓ Prospect lié — les champs ont été pré-remplis depuis le CRM</p>
+              )}
+            </div>
+            <input required type="text" placeholder="Client" className="input" value={newOffre.client} onChange={e => setNewOffre({...newOffre, client: e.target.value})} />
+            <input required type="text" placeholder="Objet de l'appel d'offres" className="input" value={newOffre.objet} onChange={e => setNewOffre({...newOffre, objet: e.target.value})} />
+            <input required type="number" placeholder="Montant estimé" className="input font-mono" value={newOffre.montant_estime} onChange={e => setNewOffre({...newOffre, montant_estime: Number(e.target.value)})} />
+            <div>
+               <label className="label">Date limite de dépôt</label>
+               <input required type="date" className="input" value={newOffre.date_limite_depot} onChange={e => setNewOffre({...newOffre, date_limite_depot: e.target.value})} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-slate-600 font-medium">Annuler</button>
-              <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-medium rounded shadow-sm hover:bg-blue-700">Enregistrer</button>
+              <button type="button" onClick={() => setShowCreate(false)} className="btn btn-ghost">Annuler</button>
+              <button type="submit" className="btn btn-primary">Enregistrer</button>
             </div>
           </div>
         </form>

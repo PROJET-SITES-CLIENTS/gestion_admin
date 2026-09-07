@@ -135,6 +135,31 @@ export const BtpLotsSection: React.FC<{ chantierId: string }> = ({ chantierId })
                   <span className="font-mono text-[11px] text-slate-600 shrink-0">{fmt(lot.budget)}</span>
                   <Badge tone={statusTone(lot.statut)}>{lot.statut}</Badge>
                   <span className="font-mono text-[11px] text-slate-500 shrink-0 w-10 text-right">{stats.avancement}%</span>
+                  {/* BUG 5 FIX : bouton pour terminer/rouvrir le lot */}
+                  {canManage && lot.statut !== 'termine' && lot.statut !== 'annule' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateBtpLot(lot.id, { statut: 'termine' as any, avancement_pct: 100 });
+                      }}
+                      className="shrink-0 text-[9.5px] font-bold text-emerald-600 uppercase border border-emerald-200 px-1.5 py-0.5 rounded hover:bg-emerald-50"
+                      title="Marquer ce lot comme terminé"
+                    >
+                      ✓ Terminer
+                    </button>
+                  )}
+                  {canManage && lot.statut === 'termine' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateBtpLot(lot.id, { statut: 'en_cours' as any, avancement_pct: lotStats(lot).avancement });
+                      }}
+                      className="shrink-0 text-[9.5px] font-bold text-amber-600 uppercase border border-amber-200 px-1.5 py-0.5 rounded hover:bg-amber-50"
+                      title="Rouvrir ce lot"
+                    >
+                      ↻ Rouvrir
+                    </button>
+                  )}
                 </button>
 
                 {/* Barre d'avancement */}

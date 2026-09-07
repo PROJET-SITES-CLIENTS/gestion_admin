@@ -540,6 +540,8 @@ export type BtpSituationStatus = 'brouillon' | 'en_attente_facturation' | 'factu
 
 export interface BtpOffre {
   id: string;
+  /** FK vers le prospect CRM — établit le lien CRM ↔ BTP */
+  prospect_id?: string;
   client: string;
   objet: string;
   montant_estime: number;
