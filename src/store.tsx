@@ -1136,7 +1136,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         
         // Auto-generate transaction for CNSS
-        const totalCnss = (payslip.employeeCnssAmount || 0) + (payslip.employerCnssAmount || 0);
+        const totalCnss = (payslip.cnssEmployeeAmount ?? payslip.employeeCnssAmount ?? 0) + (payslip.cnssEmployerAmount ?? payslip.employerCnssAmount ?? 0);
         if (totalCnss > 0) {
           await addTransaction({
             accountId: accountId,

@@ -10,11 +10,18 @@ export const RhAdmin: React.FC = () => {
   const handleCreateContract = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const type = fd.get('type') as string;
+    const endDate = fd.get('endDate') as string;
+    // Garde : CDD et STAGIAIRE exigent une date de fin
+    if (['CDD', 'STAGIAIRE', 'APPRENTI'].includes(type) && !endDate) {
+      alert(`Un contrat ${type} exige une date de fin.`);
+      return;
+    }
     const ctr = {
       employeeId: fd.get('employeeId') as string,
-      type: fd.get('type') as any,
+      type: type as any,
       startDate: fd.get('startDate') as string,
-      endDate: fd.get('endDate') as string,
+      endDate: endDate,
       probationEndDate: fd.get('probationEndDate') as string,
       status: 'ACTIVE'
     };

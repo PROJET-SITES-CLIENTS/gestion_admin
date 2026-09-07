@@ -247,7 +247,7 @@ export const RhPayroll: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Compte à débiter *</label>
                 <select name="accountId" required className="w-full border p-2 rounded-sm">
                   {treasuryAccounts?.map(acc => (
-                    <option key={acc.id} value={acc.id}>{acc.bankName} - {acc.accountName} (Solde: {acc.balance.toLocaleString()} GNF)</option>
+                    <option key={acc.id} value={acc.id}>{acc.name} ({acc.type}) — Solde : {acc.balance.toLocaleString('fr-FR')} GNF</option>
                   ))}
                 </select>
               </div>

@@ -190,6 +190,20 @@ const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any }> = {
   agroReclamations: { roles: ['GERANT','COMMERCIAL','RESP_PRODUCTION','RESP_QUALITE','RESP_AGRO','RESP_STOCKAGE','RESP_TRACABILITE','DEVELOPPEUR'], defaults: { statut: 'ouverte' } },
   agendaEvents: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
   devisRecords: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
+  // Tables Assistante (auditées : absentes de l'API Vercel → modules cassés en prod)
+  assistantMeetings: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
+  assistantTravels: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
+  assistantDocuments: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
+  assistantContacts: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
+  assistantTasks: { roles: ['GERANT','ASSISTANTE','COMMERCIAL','DEVELOPPEUR'] },
+  // Tables Comptabilité (plan comptable, journaux, écritures, immobilisations)
+  accountingAccounts: { roles: ['GERANT','COMPTABLE','DEVELOPPEUR'] },
+  accountingJournals: { roles: ['GERANT','COMPTABLE','DEVELOPPEUR'] },
+  accountingEntries: { roles: ['GERANT','COMPTABLE','DEVELOPPEUR'] },
+  assets: { roles: ['GERANT','COMPTABLE','DEVELOPPEUR'] },
+  // Tables Commercial (catalogue, propositions)
+  catalogue: { roles: ['GERANT','COMMERCIAL','ASSISTANTE','DEVELOPPEUR'] },
+  proposals: { roles: ['GERANT','COMMERCIAL','ASSISTANTE','DEVELOPPEUR'] },
 };
 
 const CONFIG_KEYS = [
@@ -336,6 +350,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const t of btpTables) response[t] = allData[t] || [];
       const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
       for (const t of agroTables) response[t] = allData[t] || [];
+
+      // Tables Assistante + Comptabilité + Commercial (absentes avant l'audit)
+      const extraTables = ['assistantMeetings','assistantTravels','assistantDocuments','assistantContacts','assistantTasks','accountingAccounts','accountingJournals','accountingEntries','assets','catalogue','proposals'];
+      for (const t of extraTables) response[t] = allData[t] || [];
       response.btpEmployeeDirectory = (allData.employees || []).map((e: any) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, position: e.position }));
 
       // btpChantierStats — agrégats P&L calculés côté serveur

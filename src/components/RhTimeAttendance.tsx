@@ -97,8 +97,11 @@ export const RhTimeAttendance: React.FC = () => {
                         <td className="py-3 px-4 text-right space-x-2">
                           {lr.status === 'PENDING' && (
                             <>
-                              <button onClick={() => updateLeaveRequestStatus(lr.id, 'APPROVED')} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-sm"><Check size={16}/></button>
-                              <button onClick={() => updateLeaveRequestStatus(lr.id, 'REJECTED')} className="p-1 text-rose-600 hover:bg-rose-50 rounded-sm"><X size={16}/></button>
+                              <button onClick={() => updateLeaveRequestStatus(lr.id, 'APPROVED')} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-sm" title="Approuver"><Check size={16}/></button>
+                              <button onClick={() => {
+                                const motif = window.prompt('Motif du refus (obligatoire) :');
+                                if (motif && motif.trim()) updateLeaveRequestStatus(lr.id, 'REJECTED', motif.trim());
+                              }} className="p-1 text-rose-600 hover:bg-rose-50 rounded-sm" title="Refuser (motif requis)"><X size={16}/></button>
                             </>
                           )}
                         </td>

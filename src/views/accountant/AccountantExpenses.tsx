@@ -4,7 +4,7 @@ import { Plus, CheckCircle, Receipt } from 'lucide-react';
 import { ExpenseCategory, Expense } from '../../types';
 
 export function AccountantExpenses() {
-  const { expenses, addExpense, updateExpenseStatus, treasuryAccounts, addTransaction, btpChantiers } = useApp();
+  const { expenses, addExpense, updateExpenseStatus, treasuryAccounts, addTransaction, btpChantiers, companyConfig } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [chantierFilter, setChantierFilter] = useState('');
   const [newExp, setNewExp] = useState<Partial<Expense>>({
@@ -14,7 +14,8 @@ export function AccountantExpenses() {
 
   const handleAmountChange = (val: number, withTva: boolean) => {
     if (withTva) {
-      const tva = val * 0.18;
+      const tvaRate = (companyConfig.tvaRate || 18) / 100;
+      const tva = Math.round(val * tvaRate);
       setNewExp(prev => ({ ...prev, amountHT: val, tvaAmount: tva, amountTTC: val + tva }));
     } else {
       setNewExp(prev => ({ ...prev, amountHT: val, tvaAmount: 0, amountTTC: val }));
