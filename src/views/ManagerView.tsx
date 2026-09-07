@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../store';
-import { BarChart3, Users, Coins, CheckCircle2, Clock, Eye, Trash2, X, Download, UserPlus, Shield, Target, Flame, Calendar, PhoneCall, Settings } from 'lucide-react';
+import { BarChart3, Users, Coins, CheckCircle2, Clock, Eye, Trash2, X, Download, UserPlus, Shield, Target, Flame, Calendar, PhoneCall, Settings, HardHat } from 'lucide-react';
 import { ProjectDetails } from '../components/ProjectDetails';
 import { Project } from '../types';
 import { useProjectFilter } from '../hooks/useProjectFilter';
@@ -10,7 +10,7 @@ import { BtpPermissionsMatrix } from '../components/BtpPermissionsMatrix';
 export default function ManagerView() {
   const { projects, deleteProject, createUser, systemUsers, fetchSystemUsers, deleteUser, prospects, deleteProspect, activeMenu, companyConfig, updateCompanyConfig, expenses, tasks, notifications, leaveRequests, employees, treasuryAccounts,
     // SYNERGIE C : données BTP intégrées au dashboard gérant
-    btpChantiers, btpChantierStats, btpSituations, btpOffres,
+    btpChantiers, btpChantierStats, btpSituations, btpOffres, pushToast,
   } = useApp();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   
@@ -422,8 +422,64 @@ export default function ManagerView() {
             </div>
           </div>
 
+          {/* Configuration Modules métier */}
+          <div className="mt-8 pt-8 border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <HardHat size={16} className="text-slate-400" /> Modules métier
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Activez uniquement les modules correspondant à votre activité. Le noyau (Gérant, Assistante, Comptable, Commercial, RH) est toujours actif.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'BTP' as const, label: 'Module BTP', desc: 'Marchés, chantiers, lots, situations, QHSE, magasin, engins', icon: HardHat },
+              ].map(mod => {
+                const active = companyConfig.activeModules?.includes(mod.key) || false;
+                return (
+                  <div key={mod.key} className={`border rounded-sm p-4 flex items-start justify-between gap-3 ${active ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200'}`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-sm ${active ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <mod.icon size={18} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{mod.label}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{mod.desc}</p>
+                        {active && (
+                          <p className="text-[11px] text-emerald-600 mt-1 font-medium">
+                            {btpChantiers.filter(c => !['clôturé', 'réception_définitive'].includes(c.statut)).length} chantier(s) actif(s)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const current = companyConfig.activeModules || [];
+                        if (active) {
+                          const actifs = btpChantiers.filter(c => !['clôturé', 'réception_définitive'].includes(c.statut));
+                          if (actifs.length > 0) {
+                            pushToast(`Impossible de désactiver le BTP : ${actifs.length} chantier(s) non clôturé(s).`, 'ERROR');
+                            return;
+                          }
+                          updateCompanyConfig({ activeModules: current.filter(m => m !== mod.key) });
+                          pushToast('Module BTP désactivé. L\'interface BTP est masquée.', 'SUCCESS');
+                        } else {
+                          updateCompanyConfig({ activeModules: [...current, mod.key] });
+                          pushToast('Module BTP activé. Nouveaux menus et rôles disponibles.', 'SUCCESS');
+                        }
+                      }}
+                      className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${active ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                      aria-label={active ? `Désactiver ${mod.label}` : `Activer ${mod.label}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${active ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Configuration Délégations d'Absence */}
-          <div className="mt-8 pt-8 border-t border-slate-100">
+          <div className="mt-8 pt-8 border-slate-100">
             <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
               <Shield size={16} className="text-slate-400" /> Gestion des Délégations & Absences
             </h3>
