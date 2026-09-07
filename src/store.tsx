@@ -508,6 +508,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNotifications(data.notifications || []);
 
         // ══════════════════════════════════════════════════════════
+        // P2-4 : NOTIFICATIONS AUTOMATIQUES BTP (CDC §10)
+        // Déclenchées par le polling 15s, anti-doublon par message
+        // ══════════════════════════════════════════════════════════
+        const existingNotifMsgs = new Set((data.notifications || []).map((n: any) => n.message));
+        const checkAutoNotif = async (targetRole: string, message: string, type: string = 'WARNING') => {
+          if (existingNotifMsgs.has(message)) return;
+          await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({ targetRole, message, type }) }).catch(() => {});
+          existingNotifMsgs.add(message);
+        };
+
+        // 1. Dépassement budget chantier (> 90% consommé)
+        for (const stat of (data.btpChantierStats || [])) {
+          if (!stat || stat.budget_engage <= 0) continue;
+          const chantier = (data.btpChantiers || []).find((c: any) => c.id === stat.id);
+          if (!chantier || !chantier.budget_initial) continue;
+          const ratio = (stat.budget_engage + (stat.cout_mo_reel || 0) + (stat.cout_engins || 0)) / chantier.budget_initial;
+          if (ratio > 0.9 && ratio <= 1.0) {
+            await checkAutoNotif('COND_TRAVAUX', `ALERTE BUDGET : « ${chantier.nom} » a consommé ${Math.round(ratio * 100)}% du budget.`, 'WARNING');
+          } else if (ratio > 1.0) {
+            await checkAutoNotif('GERANT', `DÉPASSEMENT : « ${chantier.nom} » a dépassé le budget de ${Math.round((ratio - 1) * 100)}%.`, 'ERROR');
+          }
+        }
+
+        // 2. Date limite de dépôt d'offre approchant (J-3)
+        for (const offre of (data.btpOffres || [])) {
+          if (['déposée', 'gagnée', 'perdue', 'retirée'].includes(offre.statut)) continue;
+          if (!offre.date_limite_depot) continue;
+          const daysLeft = Math.ceil((new Date(offre.date_limite_depot).getTime() - now.getTime()) / 86400000);
+          if (daysLeft === 3) {
+            await checkAutoNotif('ETUDES', `DATE LIMITE (J-3) : offre « ${offre.objet} » à déposer avant le ${new Date(offre.date_limite_depot).toLocaleDateString('fr-FR')}.`, 'WARNING');
+          } else if (daysLeft === 0) {
+            await checkAutoNotif('GERANT', `DATE LIMITE AUJOURD'HUI : offre « ${offre.objet} » (${offre.client}).`, 'ERROR');
+          }
+        }
+
+        // 3. Habilitation expirant sous 30 jours
+        for (const hab of (data.btpHabilitations || [])) {
+          if (!hab.date_expiration || hab.statut === 'expiree') continue;
+          const daysLeft = Math.ceil((new Date(hab.date_expiration).getTime() - now.getTime()) / 86400000);
+          if (daysLeft === 30) {
+            await checkAutoNotif('RH', `HABILITATION (J-30) : ${hab.type_habilitation} expire le ${new Date(hab.date_expiration).toLocaleDateString('fr-FR')}.`, 'WARNING');
+          } else if (daysLeft <= 0) {
+            await checkAutoNotif('RH', `HABILITATION EXPIRÉE : ${hab.type_habilitation} (depuis le ${new Date(hab.date_expiration).toLocaleDateString('fr-FR')}). Affectation bloquée.`, 'ERROR');
+          }
+        }
+
+        // 4. Stock article sous le seuil d'alerte
+        for (const art of (data.btpArticles || [])) {
+          if (!art.seuil_alerte || art.seuil_alerte <= 0) continue;
+          const mvts = (data.btpMouvements || []).filter((m: any) => m.article_id === art.id);
+          let stockDepot = 0;
+          for (const m of mvts) {
+            if (m.type === 'entree') stockDepot += m.quantite;
+            else if (m.type === 'sortie_chantier') stockDepot -= m.quantite;
+            else if (m.type === 'retour') stockDepot += m.quantite;
+          }
+          if (stockDepot <= art.seuil_alerte) {
+            await checkAutoNotif('MAGASINIER_BTP', `STOCK BAS : ${art.designation} — ${stockDepot} ${art.unite} restant(s) (seuil: ${art.seuil_alerte}).`, 'WARNING');
+          }
+        }
+
+        // 5. Chantier en retard (date_fin_prevue dépassée)
+        for (const chantier of (data.btpChantiers || [])) {
+          if (['clôturé', 'réception_définitive'].includes(chantier.statut)) continue;
+          if (!chantier.date_fin_prevue) continue;
+          const daysLate = Math.floor((now.getTime() - new Date(chantier.date_fin_prevue).getTime()) / 86400000);
+          if (daysLate === 1) {
+            await checkAutoNotif('COND_TRAVAUX', `RETARD (J+1) : « ${chantier.nom} » a dépassé sa date de fin prévue.`, 'WARNING');
+          } else if (daysLate === 7) {
+            await checkAutoNotif('GERANT', `RETARD (J+7) : « ${chantier.nom} » en retard de 7 jours. Pénalités éventuelles.`, 'ERROR');
+          }
+        }
+
         // FIX 10 : RELANCE AUTOMATIQUE des échéances dépassées
         // J+7 → notification COMMERCIAL (rappel)
         // J+14 → tâche COMMERCIAL (relance urgente)

@@ -5,6 +5,7 @@ import { ProjectDetails } from '../components/ProjectDetails';
 import { Project } from '../types';
 import { useProjectFilter } from '../hooks/useProjectFilter';
 import { ProjectFilterBar } from '../components/ProjectFilterBar';
+import { BtpPermissionsMatrix } from '../components/BtpPermissionsMatrix';
 
 export default function ManagerView() {
   const { projects, deleteProject, createUser, systemUsers, fetchSystemUsers, deleteUser, prospects, deleteProspect, activeMenu, companyConfig, updateCompanyConfig, expenses, tasks, notifications, leaveRequests, employees, treasuryAccounts } = useApp();
@@ -478,10 +479,20 @@ export default function ManagerView() {
               </div>
             </div>
             <p className="text-xs text-slate-500 mt-3">
-              Ces paramètres sont appliqués automatiquement lors de la génération des bulletins de paie par le module Ressources Humaines. 
+              Ces paramètres sont appliqués automatiquement lors de la génération des bulletins de paie par le module Ressources Humaines.
               Les modifications sont sauvegardées instantanément.
             </p>
           </div>
+
+          {/* Matrice de permissions BTP (CDC §3.3) */}
+          {companyConfig.activeModules?.includes('BTP') && (
+            <div className="mt-8 pt-8 border-t border-slate-100">
+              <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Shield size={16} className="text-slate-400" /> Matrice de permissions BTP
+              </h3>
+              <BtpPermissionsMatrix />
+            </div>
+          )}
         </div>
       ) : null}
 

@@ -708,7 +708,153 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const schema = CRUD_TABLES[param1];
       if (!schema) return res.status(404).json({ error: 'Table inconnue.' });
       const user = requireRole(req, res, ...schema.roles); if (!user) return;
-      const updates = { ...sanitize(body), updated_at: new Date().toISOString() };
+      let updates = { ...sanitize(body), updated_at: new Date().toISOString() };
+
+      // ══════════════════════════════════════════════════════════
+      // P2-1 : GARBES SERVEUR BTP (jusqu'ici côté client uniquement)
+      // ══════════════════════════════════════════════════════════
+
+      // Pointages : heures 0-12 uniquement, chantier actif
+      if (param1 === 'btpPointages' && updates.heures !== undefined) {
+        const h = Number(updates.heures);
+        if (isNaN(h) || h < 0 || h > 12) {
+          return res.status(400).json({ error: 'Heures invalides : entre 0 et 12 heures.' });
+        }
+        if (updates.chantier_id) {
+          const chantier = await db.getItem('btpChantiers', updates.chantier_id);
+          if (chantier && !['en_cours', 'planification'].includes(chantier.statut)) {
+            return res.status(400).json({ error: `Pointage impossible sur un chantier « ${chantier.statut} ».` });
+          }
+        }
+      }
+
+      // Engins : HS/maintenance non affectable, statut/matériau validés
+      if (param1 === 'btpEngins') {
+        const existing = await db.getItem('btpEngins', param2);
+        if (existing && updates.chantier_affecte_id && ['hors_service', 'en_maintenance'].includes(existing.statut)) {
+          return res.status(400).json({ error: `Impossible d'affecter un engin ${existing.statut.replace(/_/g, ' ')}.` });
+        }
+        if (existing && updates.compteur_horaire !== undefined && Number(updates.compteur_horaire) < 0) {
+          return res.status(400).json({ error: 'Compteur horaire négatif interdit.' });
+        }
+        if (existing && updates.taux_horaire !== undefined && Number(updates.taux_horaire) < 0) {
+          return res.status(400).json({ error: 'Taux horaire négatif interdit.' });
+        }
+      }
+
+      // Offres : montant verrouillé après dépôt (seuls ETUDES/GERANT)
+      if (param1 === 'btpOffres' && updates.montant_estime !== undefined) {
+        const existing = await db.getItem('btpOffres', param2);
+        if (existing && ['déposée', 'gagnée', 'perdue'].includes(existing.statut)
+            && !['ETUDES', 'GERANT'].includes(user.role)) {
+          delete updates.montant_estime;
+        }
+      }
+
+      // Mouvements stock : anti-négatif (sortie ≤ stock dépôt, retour ≤ stock chantier)
+      if (param1 === 'btpMouvements' && updates.quantite !== undefined && Number(updates.quantite) <= 0) {
+        return res.status(400).json({ error: 'Quantité doit être positive.' });
+      }
+
+      // Chantiers : validation RH/Matériel protégée par endpoint dédié
+      if (param1 === 'btpChantiers') {
+        if (updates.rh_validation === true && !['GERANT', 'RH'].includes(user.role)) {
+          delete updates.rh_validation;
+        }
+        if (updates.materiel_validation === true && !['GERANT', 'RESP_MATERIEL'].includes(user.role)) {
+          delete updates.materiel_validation;
+        }
+        // Budget non négatif
+        if (updates.budget_initial !== undefined && Number(updates.budget_initial) < 0) {
+          return res.status(400).json({ error: 'Budget négatif interdit.' });
+        }
+      }
+
+      // Marchés : montant non négatif
+      if (param1 === 'btpMarches' && updates.montant_ht !== undefined && Number(updates.montant_ht) < 0) {
+        return res.status(400).json({ error: 'Montant HT négatif interdit.' });
+      }
+
+      // Lots : budget non négatif, avancement 0-100
+      if (param1 === 'btpLots') {
+        if (updates.budget !== undefined && Number(updates.budget) < 0) {
+          return res.status(400).json({ error: 'Budget de lot négatif interdit.' });
+        }
+        if (updates.avancement_pct !== undefined) {
+          const pct = Number(updates.avancement_pct);
+          if (isNaN(pct) || pct < 0 || pct > 100) {
+            return res.status(400).json({ error: 'Avancement doit être entre 0 et 100%.' });
+          }
+        }
+      }
+
+      // Tâches : avancement 0-100
+      if (param1 === 'btpTaches' && updates.avancement_pct !== undefined) {
+        const pct = Number(updates.avancement_pct);
+        if (isNaN(pct) || pct < 0 || pct > 100) {
+          return res.status(400).json({ error: 'Avancement doit être entre 0 et 100%.' });
+        }
+      }
+
+      // Habilitations : date_expiration > date_obtention
+      if (param1 === 'btpHabilitations' && updates.date_expiration && updates.date_obtention) {
+        if (new Date(updates.date_expiration) <= new Date(updates.date_obtention)) {
+          return res.status(400).json({ error: "La date d'expiration doit être postérieure à la date d'obtention." });
+        }
+      }
+
+      // ══════════════════════════════════════════════════════════
+      // P2-3 : TRANSITIONS DE STATUT VALIDÉES (machine d'état serveur)
+      // ══════════════════════════════════════════════════════════
+      const VALID_TRANSITIONS: Record<string, Record<string, string[]>> = {
+        btpIncidents: {
+          'déclaré': ['qualifié', 'sécurisé', 'clôturé'],
+          'qualifié': ['sécurisé', 'action_en_cours', 'clôturé'],
+          'sécurisé': ['action_en_cours', 'en_attente', 'clôturé'],
+          'action_en_cours': ['en_attente', 'résolu', 'clôturé'],
+          'en_attente': ['action_en_cours', 'résolu', 'clôturé'],
+          'résolu': ['clôturé'],
+          'clôturé': [],
+        },
+        btpSituations: {
+          'brouillon': ['en_attente_facturation'],
+          'en_attente_facturation': ['facturée', 'annulée'],
+          'facturée': [],
+          'annulée': [],
+        },
+        btpReserves: {
+          'ouverte': ['affectée', 'annulée'],
+          'affectée': ['en_correction', 'annulée'],
+          'en_correction': ['en_verification', 'annulée'],
+          'en_verification': ['levée', 'contestée'],
+          'levée': [],
+          'contestée': ['en_correction', 'annulée'],
+          'annulée': [],
+        },
+        btpMarches: {
+          'brouillon': ['en_validation', 'cloture'],
+          'en_validation': ['signe', 'brouillon'],
+          'signe': ['os_recu', 'resilie'],
+          'os_recu': ['en_cours', 'suspendu', 'resilie'],
+          'en_cours': ['suspendu', 'acheve'],
+          'suspendu': ['en_cours', 'resilie'],
+          'acheve': ['cloture'],
+          'resilie': ['cloture'],
+          'cloture': [],
+        },
+      };
+
+      if (updates.statut !== undefined && VALID_TRANSITIONS[param1]) {
+        const existing = await db.getItem(param1, param2);
+        const currentStatus = existing?.statut;
+        const allowed = VALID_TRANSITIONS[param1][currentStatus] || [];
+        if (currentStatus && !allowed.includes(updates.statut)) {
+          return res.status(400).json({
+            error: `Transition invalide : « ${currentStatus} » → « ${updates.statut} ». Transitions autorisées : ${allowed.join(', ') || 'aucune'}.`
+          });
+        }
+      }
+
       const updated = await db.update(param1, param2, updates);
       if (!updated) return res.status(404).json({ error: 'Élément non trouvé.' });
       return res.json(updated);
