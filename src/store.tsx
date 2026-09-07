@@ -29,7 +29,8 @@ interface AppContextType {
   deleteProject: (id: string) => Promise<void>;
   savePaymentPlan: (id: string, plan: any) => Promise<void>;
   updatePaymentInstallment: (projectId: string, installmentId: string, status: 'PENDING' | 'PAID', receiptId?: string) => Promise<void>;
-  payInstallmentAndGenerateReceipt: (projectId: string, installmentId: string, installmentName: string, amount: number) => Promise<any>;
+  payInstallmentAndGenerateReceipt: (projectId: string, installmentId: string, installmentName: string, amount: number, accountId?: string, paymentMethod?: 'ESPECES' | 'CHEQUE' | 'VIREMENT' | 'MOBILE_MONEY' | 'CARTE', paymentRef?: string) => Promise<any>;
+  refundProject: (projectId: string, amount: number, accountId: string, reason?: string) => Promise<any>;
   updateProject: (project: Project) => Promise<void>;
   alertUnpaid: (projectId: string) => Promise<void>;
   cancelProject: (projectId: string) => Promise<void>;
@@ -489,6 +490,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         setTasks(processedTasks);
         setNotifications(data.notifications || []);
+
+        // ══════════════════════════════════════════════════════════
+        // FIX 10 : RELANCE AUTOMATIQUE des échéances dépassées
+        // J+7 → notification COMMERCIAL (rappel)
+        // J+14 → tâche COMMERCIAL (relance urgente)
+        // J+30 → notification GERANT (escalade direction)
+        // ══════════════════════════════════════════════════════════
+        for (const proj of (data.projects || [])) {
+          if (!proj.paymentPlan?.installments || proj.status === 'ANNULE' || proj.status === 'PAYE') continue;
+          const overdue = proj.paymentPlan.installments.find(i =>
+            i.status === 'PENDING' && new Date(i.expectedDate) < now
+          );
+          if (!overdue) continue;
+
+          const daysLate = Math.floor((now.getTime() - new Date(overdue.expectedDate).getTime()) / (1000 * 60 * 60 * 24));
+          const alreadyRelanced = (data.notifications || []).some(n =>
+            n.link === proj.id && n.message.includes(`RELANCE AUTO`) && n.message.includes(`J+${daysLate}`)
+          );
+          if (alreadyRelanced) continue;
+
+          if (daysLate === 7) {
+            await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({
+              targetRole: 'COMMERCIAL', type: 'WARNING', link: proj.id,
+              message: `RELANCE AUTO (J+7) : échéance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF dépassée sur « ${proj.name} ». Merci de contacter le client.`,
+            })}).catch(() => {});
+          } else if (daysLate === 14) {
+            await apiFetch('/tasks', { method: 'POST', body: JSON.stringify({
+              receiverRole: 'COMMERCIAL', priority: 'HIGH', link: proj.id,
+              title: `RELANCE URGENTE (J+14) : ${proj.name}`,
+              content: `Échéance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF dépassée depuis 14 jours. Contactez le client immédiatement.`,
+            })}).catch(() => {});
+          } else if (daysLate === 30) {
+            await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({
+              targetRole: 'GERANT', type: 'ERROR', link: proj.id,
+              message: `RELANCE AUTO (J+30) : « ${proj.name} » a une créance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF en retard de 30 jours. Décision direction requise.`,
+            })}).catch(() => {});
+          }
+        }
         
         // BTP Data
         setBtpOffres(data.btpOffres || []);
@@ -730,30 +769,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await syncProject(projectId, updates);
   };
 
+  /**
+   * Numérotation légale séquentielle : PRO-2026-001, REC-2026-001
+   * Stockée dans companyConfig.docCounters pour être persistée.
+   */
+  const getNextDocNumber = (prefix: 'PRO' | 'REC' | 'FAC'): string => {
+    const year = new Date().getFullYear();
+    const counters = companyConfig?.docCounters || {};
+    const key = `${prefix}_${year}`;
+    const next = ((counters as any)[key] || 0) + 1;
+    // Mettre à jour les compteurs (asynchrone, non bloquant)
+    const updated = { ...counters, [key]: next };
+    updateCompanyConfig({ ...companyConfig, docCounters: updated } as any);
+    return `${prefix}-${year}-${String(next).padStart(3, '0')}`;
+  };
+
   const payInstallmentAndGenerateReceipt = async (
     projectId: string,
     installmentId: string,
     installmentName: string,
-    amount: number
+    amount: number,
+    accountId?: string,
+    paymentMethod?: 'ESPECES' | 'CHEQUE' | 'VIREMENT' | 'MOBILE_MONEY' | 'CARTE',
+    paymentRef?: string
   ) => {
     const p = projects.find(proj => proj.id === projectId);
     if (!p) return null;
 
+    // ══════════════════════════════════════════════════════════
+    // FIX 4 : Garde anti-surplus (amount ≤ restant dû)
+    // ══════════════════════════════════════════════════════════
+    const alreadyPaid = (p.paymentPlan?.installments || [])
+      .filter(i => i.status === 'PAID')
+      .reduce((s, i) => s + (i.amount || 0), 0);
+    const remaining = (p.budget || 0) - alreadyPaid;
+    if (amount > remaining) {
+      pushToast(`TROP-PERÇU : ${amount.toLocaleString('fr-FR')} GNF > restant dû ${remaining.toLocaleString('fr-FR')} GNF. Corrigez le montant ou créez un avoir.`, 'ERROR');
+      return null;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // FIX 2 : Numérotation légale séquentielle
+    // ══════════════════════════════════════════════════════════
+    const docNumber = getNextDocNumber('REC');
+
+    // ══════════════════════════════════════════════════════════
+    // FIX 7 : TVA proportionnelle sur l'encaissement
+    // ══════════════════════════════════════════════════════════
+    const tvaRate = (companyConfig?.tvaRate || 18) / 100;
+    const amountHT = Math.round(amount / (1 + tvaRate));
+    const tvaAmount = amount - amountHT;
+
     const docId = Date.now().toString();
     const newDoc: any = {
       id: docId,
+      docNumber,                                    // REC-2026-001
       type: 'RECEIPT',
       createdAt: new Date().toISOString(),
       installmentId,
       installmentName,
       amountPaid: amount,
-      balance: (p.budget || 0) - amount
+      amountHT,
+      tvaAmount,
+      balance: remaining - amount,                  // FIX : solde calculé sur le restant réel
+      paymentMethod: paymentMethod || 'VIREMENT',   // FIX 8
+      paymentRef: paymentRef || '',                 // FIX 8
     };
 
     let allPaid = true;
     const installments = p.paymentPlan?.installments || [];
     const paymentDateStr = new Date().toISOString();
-    
     const newExpectedDate = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const currentInstIndex = installments.findIndex(i => i.id === installmentId);
@@ -762,32 +847,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updatedInstallments = installments.map((inst, index) => {
       if (inst.id === installmentId) {
-        const updatedInst = {
+        return {
           ...inst,
           amount: amount,
           status: 'PAID' as const,
           paymentDate: paymentDateStr,
-          receiptDocumentId: docId
+          receiptDocumentId: docId,
+          receiptNumber: docNumber,
         };
-        if (updatedInst.status !== 'PAID') allPaid = false;
-        return updatedInst;
       }
-      
       if (index === currentInstIndex + 1 && inst.status !== 'PAID') {
         allPaid = false;
-        return {
-          ...inst,
-          amount: Math.max(0, inst.amount + diff),
-          expectedDate: newExpectedDate
-        };
+        return { ...inst, amount: Math.max(0, inst.amount + diff), expectedDate: newExpectedDate };
       }
-
       if (inst.status !== 'PAID') {
         allPaid = false;
-        return {
-          ...inst,
-          expectedDate: newExpectedDate
-        };
+        return { ...inst, expectedDate: newExpectedDate };
       }
       return inst;
     });
@@ -802,6 +877,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updates.status = 'PAYE';
     } else if (updatedInstallments.some(i => i.status === 'PAID')) {
       updates.paymentStatus = 'PARTIAL';
+      // FIX 6 : premier paiement → projet passe EN_COURS
+      updates.status = 'EN_COURS';
       const acompteIndex = installments.findIndex(i => i.id === installmentId);
       const isFirstInstallment = acompteIndex === 0 || installmentId === 'acompte';
       if (isFirstInstallment) {
@@ -811,27 +888,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updates.paymentStatus = 'PENDING';
     }
 
-    updates.status = determineStatus({ ...p, ...updates } as any);
+    updates.status = allPaid ? 'PAYE' : (updates.status as ProjectStatus) || determineStatus({ ...p, ...updates } as any);
 
     await syncProject(projectId, updates);
-    
-    // Auto-generate transaction — avertir si aucun compte de trésorerie
-    const mainAccount = treasuryAccounts[0];
-    if (mainAccount) {
+
+    // ══════════════════════════════════════════════════════════
+    // Transaction de trésorerie — compte choisi (FIX 8)
+    // ══════════════════════════════════════════════════════════
+    const targetAccount = accountId ? treasuryAccounts.find(a => a.id === accountId) : treasuryAccounts[0];
+    if (targetAccount) {
         await addTransaction({
-            accountId: mainAccount.id,
+            accountId: targetAccount.id,
             type: 'CREDIT',
             amount: amount,
-            referenceId: docId,
+            referenceId: docNumber,
             category: 'VENTE',
-            description: `Encaissement ${installmentName} - Projet: ${p.name}`
+            description: `Encaissement ${installmentName} [${docNumber}] - Projet: ${p.name} (${paymentMethod || 'VIREMENT'}${paymentRef ? ` Réf: ${paymentRef}` : ''})`
         });
     } else {
-        pushToast('ATTENTION : encaissement enregistré SANS écriture de trésorerie (aucun compte créé). Créez un compte dans la Comptabilité.', 'WARNING');
+        pushToast('ATTENTION : encaissement enregistré SANS écriture de trésorerie. Créez un compte dans la Comptabilité.', 'WARNING');
     }
 
-    await addNotification('COMPTABLE', `Un encaissement de ${amount.toLocaleString()} GNF a été enregistré pour le projet ${p.name}.`, 'SUCCESS');
+    // ══════════════════════════════════════════════════════════
+    // FIX 3 : Écriture comptable VENTE (comptes 70x + 443)
+    // ══════════════════════════════════════════════════════════
+    await autoGenerateAccountingEntry('VENTE', amount, `Encaissement ${docNumber} - ${p.name}`);
 
+    await addNotification('COMPTABLE', `Encaissement ${docNumber} : ${amount.toLocaleString('fr-FR')} GNF (HT: ${amountHT.toLocaleString('fr-FR')} + TVA: ${tvaAmount.toLocaleString('fr-FR')}) pour « ${p.name} ».`, 'SUCCESS');
+
+    return newDoc;
+  };
+
+  /**
+   * FIX 5 : Mécanisme de remboursement après annulation
+   * Crée une transaction DEBIT + un document REMBOURSEMENT
+   */
+  const refundProject = async (projectId: string, amount: number, accountId: string, reason?: string) => {
+    const p = projects.find(proj => proj.id === projectId);
+    if (!p) return null;
+
+    // Vérifier que le projet est annulé
+    if (p.status !== 'ANNULE') {
+      pushToast('Remboursement possible uniquement sur un projet annulé.', 'ERROR');
+      return null;
+    }
+
+    // Vérifier le montant remboursable
+    const alreadyPaid = (p.paymentPlan?.installments || [])
+      .filter(i => i.status === 'PAID')
+      .reduce((s, i) => s + (i.amount || 0), 0);
+    const alreadyRefunded = (p.documents || [])
+      .filter(d => d.type === 'REMBOURSEMENT')
+      .reduce((s, d) => s + (d.amountPaid || 0), 0);
+    const refundable = alreadyPaid - alreadyRefunded;
+
+    if (amount <= 0 || amount > refundable) {
+      pushToast(`Montant invalide. Remboursable : ${refundable.toLocaleString('fr-FR')} GNF.`, 'ERROR');
+      return null;
+    }
+
+    const docNumber = getNextDocNumber('REC');
+    const docId = Date.now().toString();
+    const newDoc: any = {
+      id: docId,
+      docNumber,
+      type: 'REMBOURSEMENT',
+      createdAt: new Date().toISOString(),
+      amountPaid: amount,
+      reason: reason || 'Remboursement suite à annulation',
+      balance: refundable - amount,
+    };
+
+    // Ajouter le document
+    const documents = [...(p.documents || []), newDoc];
+    await syncProject(projectId, { documents });
+
+    // Transaction DEBIT (sortie de trésorerie)
+    await addTransaction({
+      accountId,
+      type: 'DEBIT',
+      amount,
+      referenceId: docNumber,
+      category: 'REMBOURSEMENT',
+      description: `Remboursement ${docNumber} - Projet: ${p.name}${reason ? ` (${reason})` : ''}`,
+    });
+
+    // Écriture comptable de remboursement
+    await autoGenerateAccountingEntry('ACHAT', amount, `Remboursement ${docNumber} - ${p.name}`);
+
+    await addNotification('GERANT', `Remboursement effectué : ${amount.toLocaleString('fr-FR')} GNF pour « ${p.name} » (${docNumber}).`, 'INFO');
+
+    pushToast(`Remboursement de ${amount.toLocaleString('fr-FR')} GNF effectué (${docNumber}).`, 'SUCCESS');
     return newDoc;
   };
 
@@ -850,10 +997,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const generateDocument = async (id: string, type: 'PROFORMA' | 'RECEIPT' | 'SPECS', data: any = {}) => {
     const p = projects.find(p => p.id === id);
     if (!p) return '';
+
+    // FIX 2 : Numérotation légale + FIX 7 : TVA calculée
+    const docNumber = type === 'PROFORMA' ? getNextDocNumber('PRO') : getNextDocNumber('REC');
+    const tvaRate = (companyConfig?.tvaRate || 18) / 100;
+    const totalAmount = data.amountPaid !== undefined ? (p.budget || 0) : (p.budget || 0);
+    const amountHT = Math.round(totalAmount / (1 + tvaRate));
+    const tvaAmount = totalAmount - amountHT;
+
     const newDoc: any = {
       id: Date.now().toString(),
+      docNumber,
       type,
       createdAt: new Date().toISOString(),
+      amountHT,
+      tvaAmount,
+      tvaRate: tvaRate * 100,
+      totalAmountTTC: totalAmount,
       ...data
     };
     const documents = [...(p.documents || []), newDoc];
@@ -2001,6 +2161,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       savePaymentPlan,
       updatePaymentInstallment,
       payInstallmentAndGenerateReceipt,
+      refundProject,
       updateProject,
       addExpense,
       deleteExpense,

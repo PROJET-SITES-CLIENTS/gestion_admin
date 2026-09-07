@@ -395,8 +395,8 @@ export const generateProformaPDF = async (project: Project, companyConfig: Compa
               },
               {
                 columns: [
-                  { text: 'TVA (0%)', fontSize: 8, color: COLORS.TEXT_MUTED, characterSpacing: 2 },
-                  { text: '0', fontSize: 9, color: COLORS.TEXT_MAIN, alignment: 'right' }
+                  { text: `TVA (${companyConfig?.tvaRate || 18}%)`, fontSize: 8, color: COLORS.TEXT_MUTED, characterSpacing: 2 },
+                  { text: formatGNF(Math.round(totalAmount - totalAmount / (1 + (companyConfig?.tvaRate || 18) / 100))), fontSize: 9, color: COLORS.TEXT_MAIN, alignment: 'right' }
                 ],
                 margin: [0, 0, 0, 15]
               },

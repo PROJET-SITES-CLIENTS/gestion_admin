@@ -210,7 +210,7 @@ const CONFIG_KEYS = [
   'companyName','companyAddress','companyId','companyEmail','companyPhone',
   'logoUrl','logoBase64','stampUrl','signatureUrl','bankingDetails','contractTerms',
   'clientTarget','targetAmountPerClient','rhSmig','rhCnssEmployerRate','rhCnssEmployeeRate',
-  'rhCnssCeiling','rhRtsAbattement','rhRtsRate','tvaRate','delegations','activeModules','btpPermissions',
+  'rhCnssCeiling','rhRtsAbattement','rhRtsRate','tvaRate','delegations','activeModules','btpPermissions','docCounters',
 ];
 
 const FINANCE = ['GERANT', 'COMPTABLE'];
@@ -636,6 +636,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const updates = sanitize(body);
       if (updates.status === 'PAYE' && !FINANCE.includes(user.role)) delete updates.status;
       if (updates.paymentStatus && !FINANCE.includes(user.role)) delete updates.paymentStatus;
+      if (updates.accountantPaymentConfirm !== undefined && !FINANCE.includes(user.role)) delete updates.accountantPaymentConfirm;
+
+      // FIX 4bis : Protection du paymentPlan — impossible d'écraser un plan
+      // qui contient déjà des paiements (reçus liés), sauf pour FINANCE
+      if (updates.paymentPlan && !FINANCE.includes(user.role)) {
+        const existing = await db.getItem('projects', param1);
+        const hasPayments = existing?.paymentPlan?.installments?.some((i: any) => i.status === 'PAID');
+        if (hasPayments) {
+          return res.status(403).json({ error: 'Plan de paiement verrouillé : des échéances sont déjà réglées.' });
+        }
+      }
+      // Protéger les documents aussi (anti-suppression de reçus)
+      if (updates.documents && !FINANCE.includes(user.role)) {
+        const existing = await db.getItem('projects', param1);
+        const hasReceipts = existing?.documents?.some((d: any) => d.type === 'RECEIPT');
+        if (hasReceipts && updates.documents.length < existing.documents.length) {
+          return res.status(403).json({ error: 'Documents fiscaux protégés : suppression interdite.' });
+        }
+      }
+
       const updated = await db.update('projects', param1, updates);
       if (!updated) return res.status(404).json({ error: 'Projet non trouvé.' });
       return res.json(updated);

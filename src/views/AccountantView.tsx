@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Wallet, Receipt, FileText, Target, BookOpen, Layers, Building } from 'lucide-react';
+import { Activity, Wallet, Receipt, FileText, Target, BookOpen, Layers, Building, Download } from 'lucide-react';
 import { AccountantDashboard } from './accountant/AccountantDashboard';
 import { AccountantTreasury } from './accountant/AccountantTreasury';
 import AccountantSales from './accountant/AccountantSales';
@@ -9,6 +9,7 @@ import { AccountantChart } from './accountant/AccountantChart';
 import { AccountantLedger } from './accountant/AccountantLedger';
 import { AccountantAssets } from './accountant/AccountantAssets';
 import { AccountantReceivables } from './accountant/AccountantReceivables';
+import { AccountantExport } from './accountant/AccountantExport';
 
 export default function AccountantView() {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TREASURY' | 'RECEIVABLES' | 'SALES' | 'EXPENSES' | 'TAXES' | 'CHART' | 'LEDGER' | 'ASSETS'>('DASHBOARD');
@@ -93,6 +94,14 @@ export default function AccountantView() {
             <Building size={16} /> Immobilisations
           </button>
           <button
+            onClick={() => setActiveTab('EXPORT' as any)}
+            className={`px-4 py-2 rounded-sm text-sm font-medium transition-colors flex items-center gap-2 ${
+              activeTab === ('EXPORT' as any) ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Download size={16} /> Exports
+          </button>
+          <button
             onClick={() => setActiveTab('TAXES')}
             className={`px-4 py-2 rounded-sm text-sm font-medium transition-colors flex items-center gap-2 ${
               activeTab === 'TAXES' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -112,6 +121,7 @@ export default function AccountantView() {
         {activeTab === 'SALES' && <AccountantSales />}
         {activeTab === 'EXPENSES' && <AccountantExpenses />}
         {activeTab === 'ASSETS' && <AccountantAssets />}
+        {activeTab === ('EXPORT' as any) && <AccountantExport />}
         {activeTab === 'TAXES' && <AccountantTaxes />}
       </div>
     </div>

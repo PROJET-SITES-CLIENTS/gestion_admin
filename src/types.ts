@@ -64,6 +64,10 @@ export interface Client {
 export interface Project {
   id: string;
   clientId?: string; // Link to the new Client entity
+  /** Lien vers le prospect CRM converti */
+  prospectId?: string;
+  /** Lien vers la proposition commerciale (devis) acceptée */
+  proposalId?: string;
   name: string;
   clientName: string; // Kept for legacy
   clientContact?: string;
@@ -135,6 +139,8 @@ export interface CompanyConfig {
 
   // Modules et Permissions
   activeModules?: string[]; // e.g. ['BTP']
+  /** Compteurs de numérotation légale des documents (PRO_2026: 3, REC_2026: 7...) */
+  docCounters?: Record<string, number>;
   btpPermissions?: Record<string, Record<string, boolean>>;
 }
 
