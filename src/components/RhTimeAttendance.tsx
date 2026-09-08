@@ -3,9 +3,23 @@ import { useApp } from '../store';
 import { Calendar as CalendarIcon, Clock, Check, X, FileText, Plus, Save } from 'lucide-react';
 
 export const RhTimeAttendance: React.FC = () => {
-  const { leaveRequests, employees, updateLeaveRequestStatus, addLeaveRequest, currentRole } = useApp();
+  const { leaveRequests, employees, updateLeaveRequestStatus, addLeaveRequest, currentRole, currentUser } = useApp();
   const [activeTab, setActiveTab] = useState<'LEAVES' | 'ATTENDANCE'>('LEAVES');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // ══════════════════════════════════════════════════════════
+  // T28 : un employé non-RH ne voit que SES congés et ne peut
+  // demander un congé que pour lui-même.
+  // ══════════════════════════════════════════════════════════
+  const isHR = currentRole === 'GERANT' || currentRole === 'RH';
+  const normalize = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const myEmployee = !isHR && currentUser
+    ? employees.find(e =>
+        e.userId === currentUser.id ||
+        normalize(`${e.firstName} ${e.lastName}`) === normalize(`${currentUser.firstName} ${currentUser.lastName}`)
+      )
+    : undefined;
+  const visibleLeaveRequests = isHR ? leaveRequests : (myEmployee ? leaveRequests.filter(l => l.employeeId === myEmployee.id) : []);
 
   const handleCreateLeave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -73,7 +87,7 @@ export const RhTimeAttendance: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {leaveRequests.map(lr => {
+                {visibleLeaveRequests.map(lr => {
                   const emp = employees.find(e => e.id === lr.employeeId);
                   return (
                     <tr key={lr.id} className="border-b border-slate-100 hover:bg-slate-50">
@@ -109,8 +123,8 @@ export const RhTimeAttendance: React.FC = () => {
                     </tr>
                   )
                 })}
-                {leaveRequests.length === 0 && (
-                  <tr><td colSpan={7} className="py-8 text-center text-slate-500">Aucune demande de congé.</td></tr>
+                {visibleLeaveRequests.length === 0 && (
+                  <tr><td colSpan={7} className="py-8 text-center text-slate-500">{isHR ? 'Aucune demande de congé.' : 'Aucune demande de congé à votre nom.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -144,11 +158,20 @@ export const RhTimeAttendance: React.FC = () => {
             <form onSubmit={handleCreateLeave} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Employé *</label>
-                <select name="employeeId" required className="w-full border p-2 rounded-sm">
-                  {employees.filter(e => e.isActive).map(e => (
-                    <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>
-                  ))}
-                </select>
+                {isHR ? (
+                  <select name="employeeId" required className="w-full border p-2 rounded-sm">
+                    {employees.filter(e => e.isActive).map(e => (
+                      <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>
+                    ))}
+                  </select>
+                ) : myEmployee ? (
+                  <>
+                    <input type="hidden" name="employeeId" value={myEmployee.id} />
+                    <input className="w-full border p-2 rounded-sm bg-slate-50" value={`${myEmployee.firstName} ${myEmployee.lastName}`} readOnly />
+                  </>
+                ) : (
+                  <p className="text-xs text-rose-600">Aucun dossier RH lié à votre compte — contactez le service RH.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Type de Congé *</label>

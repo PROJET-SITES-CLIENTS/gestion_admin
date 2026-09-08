@@ -74,7 +74,7 @@ interface AppContextType {
   updateLeaveRequestStatus: (id: string, status: 'PENDING'|'APPROVED'|'REJECTED', reason?: string) => Promise<void>;
   registerSalaryAdvance: (employeeId: string, amount: number) => Promise<void>;
   addPayslip: (ps: any) => Promise<void>;
-  updatePayslipStatus: (id: string, status: string) => Promise<void>;
+  updatePayslipStatus: (id: string, status: string, accountId?: string) => Promise<void>;
   // Accounting (Treasury & SYSCOHADA)
   treasuryAccounts: TreasuryAccount[];
   transactions: Transaction[];
@@ -85,6 +85,7 @@ interface AppContextType {
   addTreasuryAccount: (acc: Omit<TreasuryAccount, 'id' | 'balance'>) => Promise<void>;
   addTransaction: (tx: Omit<Transaction, 'id' | 'date'>) => Promise<boolean>;
   postAccountingEntry: (entry: Omit<any, 'id' | 'createdAt' | 'createdBy' | 'status'>) => Promise<void>;
+  autoGenerateAccountingEntry: (type: 'VENTE' | 'ACHAT' | 'SALAIRE', amount: number, label: string, tvaOverride?: number) => Promise<void>;
   validateAccountingEntry: (id: string) => Promise<void>;
   createAsset: (asset: Omit<any, 'id' | 'status'>) => Promise<void>;
   createAccountingAccount: (account: Omit<any, 'id'>) => Promise<void>;
@@ -247,6 +248,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [companyConfig, setCompanyConfig] = useState<CompanyConfig>({});
+  // T8 : ref synchronisée de la config — évite les numérotation en double sur appels rapprochés
+  const companyConfigRef = useRef<CompanyConfig>({});
+  companyConfigRef.current = companyConfig;
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [catalogue, setCatalogue] = useState<ServiceCatalogItem[]>([]);
@@ -864,16 +868,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Numérotation légale séquentielle : PRO-2026-001, REC-2026-001
    * Stockée dans companyConfig.docCounters pour être persistée.
+   * T8 : async + verrou mutex — deux appels rapprochés ne peuvent plus produire
+   * le même numéro (le compteur est relu et persisté avant de rendre le suivant).
    */
-  const getNextDocNumber = (prefix: 'PRO' | 'REC' | 'FAC'): string => {
-    const year = new Date().getFullYear();
-    const counters = companyConfig?.docCounters || {};
-    const key = `${prefix}_${year}`;
-    const next = ((counters as any)[key] || 0) + 1;
-    // Mettre à jour les compteurs (asynchrone, non bloquant)
-    const updated = { ...counters, [key]: next };
-    updateCompanyConfig({ ...companyConfig, docCounters: updated } as any);
-    return `${prefix}-${year}-${String(next).padStart(3, '0')}`;
+  const docNumberMutexRef = useRef<Promise<unknown>>(Promise.resolve());
+  const getNextDocNumber = async (prefix: 'PRO' | 'REC' | 'FAC'): Promise<string> => {
+    const run = async (): Promise<string> => {
+      const year = new Date().getFullYear();
+      const counters = { ...((companyConfigRef.current as any)?.docCounters || {}) };
+      const key = `${prefix}_${year}`;
+      const next = ((counters as any)[key] || 0) + 1;
+      (counters as any)[key] = next;
+      await updateCompanyConfig({ ...(companyConfigRef.current as any), docCounters: counters });
+      return `${prefix}-${year}-${String(next).padStart(3, '0')}`;
+    };
+    const result = docNumberMutexRef.current.then(run, run);
+    docNumberMutexRef.current = result.catch(() => undefined);
+    return result;
   };
 
   const payInstallmentAndGenerateReceipt = async (
@@ -889,6 +900,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!p) return null;
 
     // ══════════════════════════════════════════════════════════
+    // T7 : Garde basse — un encaissement doit être strictement positif
+    // ══════════════════════════════════════════════════════════
+    if (!amount || amount <= 0 || !isFinite(amount)) {
+      pushToast('Montant invalide : un encaissement doit être strictement positif.', 'ERROR');
+      return null;
+    }
+
+    // ══════════════════════════════════════════════════════════
     // FIX 4 : Garde anti-surplus (amount ≤ restant dû)
     // ══════════════════════════════════════════════════════════
     const alreadyPaid = (p.paymentPlan?.installments || [])
@@ -896,14 +915,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .reduce((s, i) => s + (i.amount || 0), 0);
     const remaining = (p.budget || 0) - alreadyPaid;
     if (amount > remaining) {
-      pushToast(`TROP-PERÇU : ${amount.toLocaleString('fr-FR')} GNF > restant dû ${remaining.toLocaleString('fr-FR')} GNF. Corrigez le montant ou créez un avoir.`, 'ERROR');
+      pushToast(`TROP-PERÇU : ${amount.toLocaleString('fr-FR')} GNF > restant dû ${remaining.toLocaleString('fr-FR')} GNF. Enregistrez au plus le restant dû (${Math.max(0, remaining).toLocaleString('fr-FR')} GNF).`, 'ERROR');
       return null;
     }
 
     // ══════════════════════════════════════════════════════════
-    // FIX 2 : Numérotation légale séquentielle
+    // FIX 2 : Numérotation légale séquentielle (T8 : atomique)
     // ══════════════════════════════════════════════════════════
-    const docNumber = getNextDocNumber('REC');
+    const docNumber = await getNextDocNumber('REC');
 
     // ══════════════════════════════════════════════════════════
     // FIX 7 : TVA proportionnelle sur l'encaissement
@@ -928,7 +947,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       paymentRef: paymentRef || '',                 // FIX 8
     };
 
-    let allPaid = true;
     const installments = p.paymentPlan?.installments || [];
     const paymentDateStr = new Date().toISOString();
     const newExpectedDate = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -937,27 +955,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const originalAmount = installments[currentInstIndex]?.amount || amount;
     const diff = originalAmount - amount;
 
-    const updatedInstallments = installments.map((inst, index) => {
-      if (inst.id === installmentId) {
-        return {
-          ...inst,
-          amount: amount,
-          status: 'PAID' as const,
-          paymentDate: paymentDateStr,
-          receiptDocumentId: docId,
-          receiptNumber: docNumber,
-        };
+    // ══════════════════════════════════════════════════════════
+    // T5 : le « payé » se juge sur le TOTAL encaissé, pas sur le
+    // parcours tranche par tranche. Un paiement qui couvre tout le
+    // budget soldera le projet même si l'échéancier avait d'autres
+    // tranches en attente.
+    // ══════════════════════════════════════════════════════════
+    const totalPaidAfter = alreadyPaid + amount;
+    const fullyPaid = totalPaidAfter >= (p.budget || 0) - 0.5;
+
+    let updatedInstallments;
+    let allPaid: boolean;
+
+    if (fullyPaid) {
+      // Budget intégralement couvert : toutes les tranches passent PAID.
+      // Les tranches sautées sont soldées à 0 pour que Σ montants = budget.
+      allPaid = true;
+      updatedInstallments = installments.map(inst =>
+        inst.id === installmentId
+          ? { ...inst, amount, status: 'PAID' as const, paymentDate: paymentDateStr, receiptDocumentId: docId, receiptNumber: docNumber }
+          : inst.status === 'PAID'
+            ? inst
+            : { ...inst, amount: 0, status: 'PAID' as const, paymentDate: paymentDateStr, receiptDocumentId: docId, receiptNumber: docNumber }
+      );
+    } else {
+      updatedInstallments = installments.map((inst, index) => {
+        if (inst.id === installmentId) {
+          return {
+            ...inst,
+            amount: amount,
+            status: 'PAID' as const,
+            paymentDate: paymentDateStr,
+            receiptDocumentId: docId,
+            receiptNumber: docNumber,
+          };
+        }
+        if (index === currentInstIndex + 1 && inst.status !== 'PAID') {
+          return { ...inst, amount: Math.max(0, inst.amount + diff), expectedDate: newExpectedDate };
+        }
+        if (inst.status !== 'PAID') {
+          return { ...inst, expectedDate: newExpectedDate };
+        }
+        return inst;
+      });
+
+      // T5 (suite) : paiement partiel de la DERNIÈRE tranche — le
+      // différentiel n'avait nulle part où être reporté : on crée une
+      // tranche complémentaire pour que l'échéancier reste équilibré.
+      const nextInst = installments[currentInstIndex + 1];
+      const diffReported = diff > 0 && nextInst && nextInst.status !== 'PAID';
+      if (diff > 0 && !diffReported) {
+        updatedInstallments = [...updatedInstallments, {
+          id: `complement-${docId}`,
+          name: 'Solde complémentaire',
+          percentage: 0,
+          amount: diff,
+          expectedDate: newExpectedDate,
+          status: 'PENDING' as const,
+        }];
       }
-      if (index === currentInstIndex + 1 && inst.status !== 'PAID') {
-        allPaid = false;
-        return { ...inst, amount: Math.max(0, inst.amount + diff), expectedDate: newExpectedDate };
-      }
-      if (inst.status !== 'PAID') {
-        allPaid = false;
-        return { ...inst, expectedDate: newExpectedDate };
-      }
-      return inst;
-    });
+      allPaid = updatedInstallments.every(i => i.status === 'PAID');
+    }
 
     const paymentPlan = p.paymentPlan ? { ...p.paymentPlan, installments: updatedInstallments } : undefined;
     const documents = [...(p.documents || []), newDoc];
@@ -1039,7 +1097,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return null;
     }
 
-    const docNumber = getNextDocNumber('REC');
+    const docNumber = await getNextDocNumber('REC');
     const docId = Date.now().toString();
     const newDoc: any = {
       id: docId,
@@ -1065,8 +1123,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: `Remboursement ${docNumber} - Projet: ${p.name}${reason ? ` (${reason})` : ''}`,
     });
 
-    // Écriture comptable de remboursement
-    await autoGenerateAccountingEntry('ACHAT', amount, `Remboursement ${docNumber} - ${p.name}`);
+    // Écriture comptable de remboursement (T12 : sans TVA déductible fantôme)
+    await autoGenerateAccountingEntry('ACHAT', amount, `Remboursement ${docNumber} - ${p.name}`, 0);
 
     await addNotification('GERANT', `Remboursement effectué : ${amount.toLocaleString('fr-FR')} GNF pour « ${p.name} » (${docNumber}).`, 'INFO');
 
@@ -1075,7 +1133,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmPaymentCommercial = async (id: string) => {
+    const p = projects.find(proj => proj.id === id);
     await syncProject(id, { commercialPaymentConfirm: true });
+    // T2 : la confirmation n'est plus muette — le comptable est notifié
+    // qu'il peut établir l'échéancier et le proforma.
+    if (p) {
+      await addNotification('COMPTABLE', `Commande confirmée par le commercial pour « ${p.name} » — l'échéancier de paiement peut être établi.`, 'INFO');
+      pushToast('Commande confirmée. La comptabilité a été notifiée.', 'SUCCESS');
+    }
   };
 
   const confirmPaymentAccountant = async (id: string) => {
@@ -1091,7 +1156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!p) return '';
 
     // FIX 2 : Numérotation légale + FIX 7 : TVA calculée
-    const docNumber = type === 'PROFORMA' ? getNextDocNumber('PRO') : getNextDocNumber('REC');
+    const docNumber = await getNextDocNumber(type === 'PROFORMA' ? 'PRO' : 'REC');
     const tvaRate = (companyConfig?.tvaRate || 18) / 100;
     const totalAmount = data.amountPaid !== undefined ? (p.budget || 0) : (p.budget || 0);
     const amountHT = Math.round(totalAmount / (1 + tvaRate));
@@ -1162,7 +1227,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (status === 'PAID') {
         await addNotification('ALL', `La note de frais de ${exp.amountTTC.toLocaleString()} GNF a été payée.`, 'SUCCESS');
         // --- GÉNÉRATION AUTOMATIQUE ÉCRITURE COMPTABLE ---
-        autoGenerateAccountingEntry('ACHAT', exp.amountTTC, `Dépense : ${exp.description}`);
+        // T12 : la TVA de l'écriture est la TVA RÉELLE de la dépense
+        // (0 si la dépense est sans TVA) — plus de TVA rétrocalculée fantôme.
+        autoGenerateAccountingEntry('ACHAT', exp.amountTTC, `Dépense : ${exp.description}`, exp.tvaAmount || 0);
       }
     } catch (err) { reportError(err, 'Opération'); }
   };
@@ -1175,6 +1242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCompanyConfig = async (config: CompanyConfig) => {
+    companyConfigRef.current = config; // T8 : maj synchrone du ref (numérotation atomique)
     setCompanyConfig(config);
     try {
       await apiFetch('/config/update', {
@@ -1262,13 +1330,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const interactions = prospect.interactions || [];
         const prospectNotes = interactions.map(i => `${new Date(i.date).toLocaleDateString()}: ${i.notes}`).join('\n\n') + (prospect.notes ? '\n\n' + prospect.notes : '');
         const description = `Lead converti depuis ${prospect.source || 'Inconnu'}.\nTYPE PROJET: ${prospect.projectType || 'Non spécifié'}\nOBJECTIFS: ${prospect.objectives || 'Non spécifié'}${prospectNotes ? '\n\nHISTORIQUE APPELS:\n' + prospectNotes : ''}`;
-        
+
+        // T1 : rattacher automatiquement le devis ACCEPTÉ du prospect
+        const acceptedProposal = proposals.find(pr => pr.prospectId === id && pr.status === 'ACCEPTED');
+
         await syncProject(newProj.id, {
           description,
           budget: prospect.estimatedBudget ? parseInt(prospect.estimatedBudget.replace(/[^0-9]/g, ''), 10) || 0 : 0,
           clientName: prospect.name,
-          clientContact: prospect.phone + (prospect.email ? ' / ' + prospect.email : '')
-        });
+          clientContact: prospect.phone + (prospect.email ? ' / ' + prospect.email : ''),
+          ...(acceptedProposal ? { proposalId: acceptedProposal.id } : {}),
+        } as any);
         // Notification : nouvelle affaire convertie
         await addNotification('GERANT', `Nouvelle affaire convertie : « ${prospect.name} » (projet #${newProj.id.slice(0, 8)}).`, 'SUCCESS');
         return newProj.id;
@@ -1318,6 +1390,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const updated = await res.json();
         setProposals(prev => prev.map(p => p.id === id ? updated : p));
+
+        // ══════════════════════════════════════════════════════
+        // T1 : accepter un devis déclenche désormais la synchro —
+        // le devis accepté est rattaché au projet du prospect,
+        // le prospect progresse dans le pipeline, et la direction
+        // est notifiée. (Avant : ACCEPTED ne faisait RIEN.)
+        // ══════════════════════════════════════════════════════
+        if (status === 'ACCEPTED') {
+          const proposal = proposals.find(p => p.id === id);
+          const prospect = proposal?.prospectId ? prospects.find(pr => pr.id === proposal.prospectId) : undefined;
+          const linkedProject = proposal?.prospectId
+            ? projects.find(p => (p as any).prospectId === proposal.prospectId)
+            : undefined;
+          if (linkedProject && !(linkedProject as any).proposalId) {
+            await syncProject(linkedProject.id, { proposalId: id } as any);
+          }
+          if (prospect && !['GAGNE', 'PERDU'].includes(prospect.stage)) {
+            await updateProspect(prospect.id, { stage: 'NEGOCIATION' });
+          }
+          await addNotification('GERANT', `Devis « ${updated.title} » ACCEPTÉ${prospect ? ` par ${prospect.name}` : ''}${linkedProject ? ` — rattaché au projet « ${linkedProject.name} »` : ''}.`, 'SUCCESS');
+        }
+        if (status === 'REJECTED') {
+          const proposal = proposals.find(p => p.id === id);
+          if (proposal) {
+            await addNotification('GERANT', `Devis « ${updated.title} » refusé par le client.`, 'WARNING');
+          }
+        }
       }
     } catch (e) { reportError(e, 'Opération'); }
   };
@@ -1385,6 +1484,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updatePayslipStatus = async (id: string, status: string, accountId?: string) => {
     const payslip = payslips.find(p => p.id === id);
+    if (!payslip) return;
+
+    // ══════════════════════════════════════════════════════════
+    // T26 : machine à états stricte DRAFT → VALIDATED → PAID.
+    // Interdit : re-payer (double comptabilisation), payer sans
+    // valider, revenir en arrière.
+    // ══════════════════════════════════════════════════════════
+    if (payslip.status === 'PAID') {
+      pushToast('Cette fiche de paie est déjà payée — opération refusée.', 'ERROR');
+      return;
+    }
+    if (status === 'PAID' && payslip.status !== 'VALIDATED') {
+      pushToast('Fiche non validée : validez-la avant le paiement.', 'ERROR');
+      return;
+    }
+    if (status === 'VALIDATED' && payslip.status !== 'DRAFT') {
+      pushToast('Cette fiche est déjà validée.', 'ERROR');
+      return;
+    }
+    if (status === payslip.status) return;
+
     setPayslips(prev => prev.map(p => p.id === id ? { ...p, status } : p));
     try {
       await apiFetch(`/rh/payslips/${id}/update`, { method: 'POST', body: JSON.stringify({ status }) });
@@ -2259,16 +2379,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // --- COMPTABILITÉ (SYSCOHADA) ---
-  const postAccountingEntry = async (entry: Omit<any, 'id' | 'createdAt' | 'createdBy' | 'status'>) => {
+  const postAccountingEntry = async (entry: Omit<any, 'id' | 'createdAt' | 'createdBy' | 'status'>): Promise<any> => {
     // Vérification de la partie double avant envoi au serveur
     const debit = entry.lines.reduce((acc: number, l: any) => acc + (l.debit || 0), 0);
     const credit = entry.lines.reduce((acc: number, l: any) => acc + (l.credit || 0), 0);
     if (Math.abs(debit - credit) > 0.01) {
       pushToast('L\'écriture est déséquilibrée (Débit ≠ Crédit).', 'ERROR');
-      return;
+      return null;
     }
     const created = await crudCreate<any>('accountingEntries', entry, 'Écriture comptable');
     if (created) setAccountingEntries(prev => [...prev, created]);
+    return created || null;
   };
 
   const validateAccountingEntry = async (id: string) => {
@@ -2287,57 +2408,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Liaison automatique Trésorerie -> Grand Livre
-  const autoGenerateAccountingEntry = async (type: 'VENTE' | 'ACHAT' | 'SALAIRE', amount: number, label: string) => {
-    if (accountingJournals.length === 0 || accountingAccounts.length === 0) return;
-    
-    // Trouver les journaux
+  // T12 : tvaOverride permet de passer la TVA RÉELLE (ex. dépense sans TVA → 0)
+  // T17 : comptes stricts — plus de fallback « premier compte venu »
+  // T18 : les écritures auto sont validées (VALIDATED) dès leur création
+  const autoGenerateAccountingEntry = async (type: 'VENTE' | 'ACHAT' | 'SALAIRE', amount: number, label: string, tvaOverride?: number) => {
+    if (accountingJournals.length === 0 || accountingAccounts.length === 0) {
+      pushToast('Écriture non générée : journaux ou plan comptable vides. Initialisez le plan SYSCOHADA.', 'WARNING');
+      return;
+    }
+
+    // Journaux (le fallback journal est sans risque : l'équilibre est conservé)
     const journalVentes = accountingJournals.find(j => j.code === 'VT') || accountingJournals[0];
     const journalAchats = accountingJournals.find(j => j.code === 'AC') || accountingJournals[0];
     const journalBanque = accountingJournals.find(j => j.code === 'BQ') || accountingJournals[0];
 
-    // Trouver les comptes de base
-    const compteBanque = accountingAccounts.find(a => a.accountNumber.startsWith('52')) || accountingAccounts[0];
-    const compteVente = accountingAccounts.find(a => a.accountNumber.startsWith('70')) || accountingAccounts[0];
-    const compteAchat = accountingAccounts.find(a => a.accountNumber.startsWith('60')) || accountingAccounts[0];
-    const compteSalaire = accountingAccounts.find(a => a.accountNumber.startsWith('66')) || accountingAccounts[0];
-    
-    // Trouver les comptes de TVA
-    const tvaCollecteeAcc = accountingAccounts.find(a => a.accountNumber.startsWith('443')) || accountingAccounts[0];
-    const tvaDeductibleAcc = accountingAccounts.find(a => a.accountNumber.startsWith('445')) || accountingAccounts[0];
+    // T17 : résolution STRICTE des comptes par préfixe — aucun fallback
+    const findAcc = (prefixes: string[]) => {
+      for (const pfx of prefixes) {
+        const acc = accountingAccounts.find(a => a.accountNumber && a.accountNumber.startsWith(pfx));
+        if (acc) return acc;
+      }
+      return null;
+    };
+    const compteBanque = findAcc(['52', '57']);   // Banques, sinon Caisse
+    const compteVente = findAcc(['70']);
+    const compteAchat = findAcc(['60', '61']);
+    const compteSalaire = findAcc(['66']);
+    const tvaCollecteeAcc = findAcc(['443']);
+    const tvaDeductibleAcc = findAcc(['445']);
 
+    // TVA : réelle si fournie, sinon extraite du TTC
     const tvaRate = companyConfig.tvaRate || 18;
-    const ht = amount / (1 + (tvaRate / 100));
-    const tva = amount - ht;
+    let ht: number, tva: number;
+    if (tvaOverride !== undefined) {
+      tva = Math.round(tvaOverride);
+      ht = amount - tva;
+    } else {
+      ht = Math.round(amount / (1 + (tvaRate / 100)));
+      tva = amount - ht;
+    }
 
     let entry: any = null;
 
     if (type === 'VENTE') {
-      entry = {
-        journalId: journalVentes.id,
-        date: new Date().toISOString(),
-        reference: 'AUTO-VT',
-        description: label,
-        status: 'DRAFT',
-        lines: [
-          { accountId: compteBanque.id, debit: amount, credit: 0, label: label },
-          { accountId: compteVente.id, debit: 0, credit: ht, label: 'HT - ' + label },
-          { accountId: tvaCollecteeAcc.id, debit: 0, credit: tva, label: 'TVA - ' + label }
-        ]
-      };
+      if (!compteBanque || !compteVente) {
+        pushToast('Écriture VENTE non générée : comptes 52x (trésorerie) ou 70x (ventes) manquants dans le plan comptable.', 'WARNING');
+        return;
+      }
+      if (tva > 0 && !tvaCollecteeAcc) {
+        pushToast('Écriture VENTE non générée : compte 443 (TVA collectée) manquant dans le plan comptable.', 'WARNING');
+        return;
+      }
+      const lines = [
+        { accountId: compteBanque.id, debit: amount, credit: 0, label },
+        { accountId: compteVente.id, debit: 0, credit: ht, label: 'HT - ' + label },
+        ...(tva > 0 && tvaCollecteeAcc ? [{ accountId: tvaCollecteeAcc.id, debit: 0, credit: tva, label: 'TVA - ' + label }] : [])
+      ];
+      entry = { journalId: journalVentes.id, date: new Date().toISOString(), reference: 'AUTO-VT', description: label, status: 'DRAFT', lines };
     } else if (type === 'ACHAT') {
-      entry = {
-        journalId: journalAchats.id,
-        date: new Date().toISOString(),
-        reference: 'AUTO-AC',
-        description: label,
-        status: 'DRAFT',
-        lines: [
-          { accountId: compteAchat.id, debit: ht, credit: 0, label: 'HT - ' + label },
-          { accountId: tvaDeductibleAcc.id, debit: tva, credit: 0, label: 'TVA - ' + label },
-          { accountId: compteBanque.id, debit: 0, credit: amount, label: label }
-        ]
-      };
+      if (!compteAchat || !compteBanque) {
+        pushToast('Écriture ACHAT non générée : comptes 60x (charges) ou 52x (trésorerie) manquants dans le plan comptable.', 'WARNING');
+        return;
+      }
+      if (tva > 0 && !tvaDeductibleAcc) {
+        pushToast('Écriture ACHAT non générée : compte 445 (TVA déductible) manquant dans le plan comptable.', 'WARNING');
+        return;
+      }
+      const lines = [
+        { accountId: compteAchat.id, debit: ht, credit: 0, label: 'HT - ' + label },
+        ...(tva > 0 && tvaDeductibleAcc ? [{ accountId: tvaDeductibleAcc.id, debit: tva, credit: 0, label: 'TVA - ' + label }] : []),
+        { accountId: compteBanque.id, debit: 0, credit: amount, label }
+      ];
+      entry = { journalId: journalAchats.id, date: new Date().toISOString(), reference: 'AUTO-AC', description: label, status: 'DRAFT', lines };
     } else if (type === 'SALAIRE') {
+      if (!compteSalaire || !compteBanque) {
+        pushToast('Écriture SALAIRE non générée : comptes 66x (rémunérations) ou 52x (trésorerie) manquants dans le plan comptable.', 'WARNING');
+        return;
+      }
       entry = {
         journalId: journalBanque.id,
         date: new Date().toISOString(),
@@ -2345,15 +2492,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         description: label,
         status: 'DRAFT',
         lines: [
-          { accountId: compteSalaire.id, debit: amount, credit: 0, label: label },
-          { accountId: compteBanque.id, debit: 0, credit: amount, label: label }
+          { accountId: compteSalaire.id, debit: amount, credit: 0, label },
+          { accountId: compteBanque.id, debit: 0, credit: amount, label }
         ]
       };
     }
 
     if (entry) {
       entry.lines = entry.lines.filter((l: any) => l.debit > 0 || l.credit > 0);
-      await postAccountingEntry(entry);
+      const created = await postAccountingEntry(entry);
+      // T18 : les écritures générées par les flux métier sont postées
+      // immédiatement (VALIDATED) — elles alimentent bilan, TVA et
+      // reporting sans exiger une validation manuelle de chacune.
+      if (created) {
+        await validateAccountingEntry(created.id);
+      }
     }
   };
 
@@ -2521,6 +2674,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       accountingEntries,
       assets,
       postAccountingEntry,
+      autoGenerateAccountingEntry,
       validateAccountingEntry,
       createAsset,
       createAccountingAccount,

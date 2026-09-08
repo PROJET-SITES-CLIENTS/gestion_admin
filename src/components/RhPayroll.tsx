@@ -1,24 +1,42 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Calculator, FileText, CheckCircle, Download, FileSignature, X, Save } from 'lucide-react';
+import { generatePayslipPDF } from '../utils/pdfGenerator';
 
 export const RhPayroll: React.FC = () => {
-  const { payslips, employees, companyConfig, treasuryAccounts, addPayslip, updatePayslipStatus, currentRole, btpPointages } = useApp();
+  const { payslips, employees, companyConfig, treasuryAccounts, addPayslip, updatePayslipStatus, currentRole, currentUser, btpPointages, pushToast } = useApp();
   const [activeTab, setActiveTab] = useState<'PAYSLIPS' | 'EXPENSES'>('PAYSLIPS');
   const [showAddForm, setShowAddForm] = useState(false);
   const [formEmpId, setFormEmpId] = useState('');
   const [formMonth, setFormMonth] = useState(new Date().getMonth() + 1);
   const [paymentModal, setPaymentModal] = useState<{ isOpen: boolean; payslipId: string | null }>({ isOpen: false, payslipId: null });
 
+  // ══════════════════════════════════════════════════════════
+  // T28 : un employé non-RH ne voit QUE ses propres bulletins.
+  // ══════════════════════════════════════════════════════════
+  const isHR = currentRole === 'GERANT' || currentRole === 'RH';
+  const normalize = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const myEmployee = !isHR && currentUser
+    ? employees.find(e =>
+        e.userId === currentUser.id ||
+        normalize(`${e.firstName} ${e.lastName}`) === normalize(`${currentUser.firstName} ${currentUser.lastName}`)
+      )
+    : undefined;
+  const visiblePayslips = isHR ? payslips : (myEmployee ? payslips.filter(ps => ps.employeeId === myEmployee.id) : []);
+
   const calculatePayslip = (baseSalary: number) => {
-    const employeeCnss = baseSalary * ((companyConfig.rhCnssEmployeeRate || 5) / 100);
-    const employerCnss = baseSalary * ((companyConfig.rhCnssEmployerRate || 13) / 100);
+    // T24 : le plafond CNSS configuré (s'il est > 0) est désormais APPLIQUÉ —
+    // les cotisations se calculent sur min(base, plafond).
+    const ceiling = Number(companyConfig.rhCnssCeiling) || 0;
+    const baseCnss = ceiling > 0 ? Math.min(baseSalary, ceiling) : baseSalary;
+    const employeeCnss = baseCnss * ((companyConfig.rhCnssEmployeeRate || 5) / 100);
+    const employerCnss = baseCnss * ((companyConfig.rhCnssEmployerRate || 13) / 100);
     const baseRts = baseSalary - (baseSalary * ((companyConfig.rhRtsAbattement || 20) / 100));
-    
-    const rtsAmount = baseRts * ((companyConfig.rhRtsRate || 10) / 100); 
-    
+
+    const rtsAmount = baseRts * ((companyConfig.rhRtsRate || 10) / 100);
+
     const netSalary = baseSalary - employeeCnss - rtsAmount;
-    
+
     return { employeeCnss, employerCnss, rtsAmount, netSalary };
   };
 
@@ -29,22 +47,42 @@ export const RhPayroll: React.FC = () => {
     const emp = employees.find(x => x.id === empId);
     if (!emp) return;
 
+    const month = Number(fd.get('month'));
+    const year = new Date().getFullYear();
+
+    // ══════════════════════════════════════════════════════════
+    // T25 : anti-doublon — une seule fiche par employé + mois + année.
+    // ══════════════════════════════════════════════════════════
+    if (payslips.some(ps => ps.employeeId === empId && ps.month === month && ps.year === year)) {
+      pushToast(`Une fiche de paie existe déjà pour ${emp.firstName} ${emp.lastName} (${month}/${year}).`, 'ERROR');
+      return;
+    }
+
     const overtimeAmount = Number(fd.get('overtimeAmount') || 0);
     const base = emp.baseSalary;
+
+    // T24 : alerte SMIG — un salaire en dessous du SMIG est signalé
+    // avant génération (l'utilisateur confirme s'il s'agit d'un temps partiel).
+    const smig = Number(companyConfig.rhSmig) || 0;
+    if (smig > 0 && base + overtimeAmount < smig) {
+      const go = window.confirm(`ATTENTION : le brut (${(base + overtimeAmount).toLocaleString('fr-FR')} GNF) est inférieur au SMIG configuré (${smig.toLocaleString('fr-FR')} GNF).\n\nS'agit-il d'un temps partiel ou d'une entrée en cours de mois ?\nOK = générer quand même, Annuler = corriger.`);
+      if (!go) return;
+    }
+
     const calc = calculatePayslip(base + overtimeAmount);
 
     const ps = {
       employeeId: empId,
-      month: Number(fd.get('month')),
-      year: new Date().getFullYear(),
+      month,
+      year,
       baseSalary: base,
       bonuses: 0,
       overtimeAmount,
       grossSalary: base + overtimeAmount,
-      cnssEmployeeAmount: calc.employeeCnss,
-      cnssEmployerAmount: calc.employerCnss,
-      rtsAmount: calc.rtsAmount,
-      netSalary: calc.netSalary,
+      cnssEmployeeAmount: Math.round(calc.employeeCnss),
+      cnssEmployerAmount: Math.round(calc.employerCnss),
+      rtsAmount: Math.round(calc.rtsAmount),
+      netSalary: Math.round(calc.netSalary),
       status: 'DRAFT'
     };
     addPayslip(ps);
@@ -99,7 +137,7 @@ export const RhPayroll: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {payslips.map(ps => {
+                {visiblePayslips.map(ps => {
                   const emp = employees.find(e => e.id === ps.employeeId);
                   return (
                     <tr key={ps.id} className="border-b border-slate-100 hover:bg-slate-50">
@@ -120,21 +158,28 @@ export const RhPayroll: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right space-x-2">
-                        {ps.status === 'DRAFT' && (currentRole === 'GERANT' || currentRole === 'RH') && (
+                        {ps.status === 'DRAFT' && isHR && (
                           <button onClick={() => updatePayslipStatus(ps.id, 'VALIDATED')} className="text-blue-600 hover:underline text-xs">Valider</button>
                         )}
                         {ps.status === 'VALIDATED' && currentRole === 'GERANT' && (
                           <button onClick={() => setPaymentModal({ isOpen: true, payslipId: ps.id })} className="text-emerald-600 hover:underline text-xs font-semibold">Marquer Payée</button>
                         )}
-                        <button className="text-slate-500 hover:text-slate-800" title="Télécharger PDF">
+                        <button
+                          className="text-slate-500 hover:text-slate-800"
+                          title="Télécharger le bulletin PDF"
+                          onClick={() => {
+                            const employee = employees.find(e => e.id === ps.employeeId);
+                            generatePayslipPDF(ps, employee, companyConfig);
+                          }}
+                        >
                           <Download size={16}/>
                         </button>
                       </td>
                     </tr>
                   )
                 })}
-                {payslips.length === 0 && (
-                  <tr><td colSpan={7} className="py-8 text-center text-slate-500">Aucune fiche de paie générée.</td></tr>
+                {visiblePayslips.length === 0 && (
+                  <tr><td colSpan={7} className="py-8 text-center text-slate-500">{isHR ? 'Aucune fiche de paie générée.' : 'Aucun bulletin à votre nom.'}</td></tr>
                 )}
               </tbody>
             </table>

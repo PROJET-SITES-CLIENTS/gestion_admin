@@ -4,11 +4,20 @@ import { AssistantDocument } from '../../types';
 import { FileText, Plus, ShieldAlert, AlertTriangle, CheckCircle, Trash2, Edit2, ShieldCheck, Download, Archive } from 'lucide-react';
 
 export default function AssistantDocuments() {
-  const { assistantDocuments, crudCreateItem, crudUpdateItem, crudDeleteItem } = useApp();
+  const { assistantDocuments, crudCreateItem, crudUpdateItem, crudDeleteItem, currentRole } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // ══════════════════════════════════════════════════════════
+  // T29 : les documents « Strictement Confidentiels » ne sont
+  // visibles que de la Direction (Gérant) et de l'Assistante.
+  // ══════════════════════════════════════════════════════════
+  const canSeeConfidential = currentRole === 'GERANT' || currentRole === 'ASSISTANTE';
+  const visibleDocuments = canSeeConfidential
+    ? assistantDocuments
+    : assistantDocuments.filter((d: AssistantDocument) => !d.isConfidential);
 
   const [formData, setFormData] = useState<Partial<AssistantDocument>>({
     title: '', category: 'ADMINISTRATIF', url: '', isConfidential: false, status: 'VALID', expirationDate: ''
@@ -46,7 +55,7 @@ export default function AssistantDocuments() {
     }
   };
 
-  const filteredDocs = assistantDocuments.filter((d: AssistantDocument) => {
+  const filteredDocs = visibleDocuments.filter((d: AssistantDocument) => {
     const matchSearch = d.title.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = statusFilter === 'ALL' || d.status === statusFilter;
     return matchSearch && matchStatus;

@@ -14,7 +14,7 @@ import { useProjectFilter } from '../../hooks/useProjectFilter';
 import { ProjectFilterBar } from '../../components/ProjectFilterBar';
 
 export default function AccountantSales() {
-  const { projects, companyConfig, expenses, addExpense, deleteExpense, updateCompanyConfig, confirmPaymentAccountant, generateDocument, savePaymentPlan, payInstallmentAndGenerateReceipt, alertUnpaid } = useApp();
+  const { projects, companyConfig, expenses, addExpense, deleteExpense, updateCompanyConfig, confirmPaymentAccountant, generateDocument, savePaymentPlan, payInstallmentAndGenerateReceipt, alertUnpaid, refundProject, treasuryAccounts, pushToast } = useApp();
   const { filters, setFilters, filteredProjects } = useProjectFilter(projects);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
@@ -77,9 +77,14 @@ export default function AccountantSales() {
 
   const handleAddExpense = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newExpense.amount || !newExpense.category || !newExpense.description) return;
-    // Format harmonisé avec le noyau : sans TVA → HT = TTC = montant.
+    // T11 : montant invalide ou négatif refusé
     const montant = Number(newExpense.amount);
+    if (!montant || montant <= 0 || !isFinite(montant)) {
+      pushToast('Montant de dépense invalide : saisissez un montant strictement positif.', 'ERROR');
+      return;
+    }
+    if (!newExpense.category || !newExpense.description) return;
+    // Format harmonisé avec le noyau : sans TVA → HT = TTC = montant.
     addExpense({
       category: newExpense.category as Expense['category'],
       amountHT: montant,
@@ -263,6 +268,63 @@ export default function AccountantSales() {
 
         {/* Content */}
         <div className="p-4 max-w-7xl mx-auto w-full flex flex-col gap-8 print:p-0 print:m-0">
+
+          {/* ══════════════════════════════════════════════════════
+              T10 : Remboursement client après annulation — l'UI
+              manquait alors que toute la logique existe au store.
+              ══════════════════════════════════════════════════════ */}
+          {selectedProject.status === 'ANNULE' && (() => {
+            const alreadyRefunded = (selectedProject.documents || [])
+              .filter(d => d.type === 'REMBOURSEMENT')
+              .reduce((s, d) => s + (d.amountPaid || 0), 0);
+            const refundable = totalPaid - alreadyRefunded;
+            if (refundable <= 0) return null;
+            return (
+              <div className="bg-rose-50/60 border border-rose-200 rounded-sm p-5 print:hidden">
+                <h3 className="text-sm font-bold text-rose-800 uppercase tracking-widest mb-1">Projet annulé — Remboursement dû</h3>
+                <p className="text-xs text-rose-700 mb-4">
+                  Encaissé : {totalPaid.toLocaleString('fr-FR')} GNF · Déjà remboursé : {alreadyRefunded.toLocaleString('fr-FR')} GNF · <strong>Remboursable : {refundable.toLocaleString('fr-FR')} GNF</strong>
+                </p>
+                <form
+                  className="flex flex-wrap items-end gap-3"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const amount = Number(fd.get('refundAmount'));
+                    const account = fd.get('refundAccount') as string;
+                    const reason = (fd.get('refundReason') as string) || undefined;
+                    if (!account) { pushToast('Sélectionnez le compte de trésorerie à débiter.', 'ERROR'); return; }
+                    if (!isFinite(amount) || amount <= 0 || amount > refundable) {
+                      pushToast(`Montant invalide. Remboursable : ${refundable.toLocaleString('fr-FR')} GNF.`, 'ERROR');
+                      return;
+                    }
+                    await refundProject(selectedProject.id, amount, account, reason);
+                  }}
+                >
+                  <div>
+                    <label className="block text-[11px] font-semibold text-rose-800 uppercase mb-1">Montant (GNF)</label>
+                    <input name="refundAmount" type="number" min={1} max={refundable} required className="border border-rose-200 bg-white rounded-sm p-2 text-sm font-mono w-40" placeholder={String(refundable)} />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-rose-800 uppercase mb-1">Compte à débiter</label>
+                    <select name="refundAccount" required className="border border-rose-200 bg-white rounded-sm p-2 text-sm w-56">
+                      <option value="">Sélectionner…</option>
+                      {treasuryAccounts.map(acc => (
+                        <option key={acc.id} value={acc.id}>{acc.name} ({acc.type}) — {acc.balance.toLocaleString('fr-FR')} GNF</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="block text-[11px] font-semibold text-rose-800 uppercase mb-1">Motif (optionnel)</label>
+                    <input name="refundReason" className="border border-rose-200 bg-white rounded-sm p-2 text-sm w-full" placeholder="Annulation de commande…" />
+                  </div>
+                  <button type="submit" className="bg-rose-600 hover:bg-rose-700 text-white px-5 py-2 rounded-sm text-sm font-semibold">
+                    Rembourser & Émettre le document
+                  </button>
+                </form>
+              </div>
+            );
+          })()}
           
           {/* Bento-style financial dashboard strip */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 print:hidden">

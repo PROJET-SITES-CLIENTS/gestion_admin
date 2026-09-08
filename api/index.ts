@@ -372,6 +372,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Tables Assistante + Comptabilité + Commercial (absentes avant l'audit)
       const extraTables = ['assistantMeetings','assistantTravels','assistantDocuments','assistantContacts','assistantTasks','accountingAccounts','accountingJournals','accountingEntries','assets','catalogue','proposals'];
       for (const t of extraTables) response[t] = allData[t] || [];
+      // T29 : les documents GED confidentiels ne partent qu'aux rôles autorisés
+      if (!['GERANT', 'ASSISTANTE', 'DEVELOPPEUR'].includes(role)) {
+        response.assistantDocuments = (response.assistantDocuments || []).filter((d: any) => !d.isConfidential);
+      }
       response.btpEmployeeDirectory = (allData.employees || []).map((e: any) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, position: e.position }));
 
       // btpChantierStats — agrégats P&L calculés côté serveur
@@ -548,12 +552,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (route === 'rh' && param1 === 'payslips' && method === 'POST' && !param2) {
       const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
+      // T25 : unicité employé + mois + année (anti-doublon serveur)
+      const employeeId = (body as any)?.employeeId;
+      const month = Number((body as any)?.month);
+      const year = Number((body as any)?.year) || new Date().getFullYear();
+      if (employeeId && month) {
+        const existing = await db.getTable('payslips');
+        const dup = existing.find((p: any) => p.employeeId === employeeId && Number(p.month) === month && Number(p.year) === year);
+        if (dup) return res.status(409).json({ error: `Un bulletin existe déjà pour cet employé (${month}/${year}).` });
+      }
       const ps = { id: genId(), ...sanitize(body), status: 'DRAFT', createdAt: new Date().toISOString() };
       await db.insert('payslips', ps);
       return res.status(201).json(ps);
     }
     if (route === 'rh' && param1 === 'payslips' && param2 === 'update') {
       const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
+      // T26 : machine à états stricte DRAFT → VALIDATED → PAID (pas de re-paiement)
+      if ((body as any)?.status) {
+        const current = await db.getTable('payslips');
+        const target = current.find((p: any) => p.id === param1);
+        const newStatus = (body as any).status;
+        const ALLOWED: Record<string, string[]> = { DRAFT: ['VALIDATED'], VALIDATED: ['PAID'], PAID: [] };
+        if (target && !(ALLOWED[target.status] || []).includes(newStatus)) {
+          return res.status(400).json({ error: `Transition interdite : ${target.status} → ${newStatus}.` });
+        }
+      }
       const updated = await db.update('payslips', param1, sanitize(body));
       if (!updated) return res.status(404).json({ error: 'Bulletin non trouvé.' });
       return res.json(updated);
@@ -585,6 +608,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ============================================================
     if (route === 'expenses' && method === 'POST' && !param1) {
       const user = requireRole(req, res, ...FINANCE); if (!user) return;
+      // T11 : montant invalide ou négatif refusé côté serveur
+      const amountTTC = Number((body as any)?.amountTTC);
+      if (!isFinite(amountTTC) || amountTTC <= 0) {
+        return res.status(400).json({ error: 'Montant de dépense invalide : strictement positif requis.' });
+      }
       const exp = { id: genId(), ...sanitize(body), status: 'PENDING', createdAt: new Date().toISOString() };
       await db.insert('expenses', exp);
       return res.status(201).json(exp);

@@ -15,7 +15,7 @@ import { generateReceiptPDF } from '../../utils/pdfGenerator';
 export function AccountantReceivables() {
   const {
     projects, treasuryAccounts, addTransaction, pushToast,
-    addNotification, companyConfig,
+    addNotification, companyConfig, updateProject, autoGenerateAccountingEntry,
     // SYNERGIE D : inclure les chantiers BTP dans les créances
     btpChantiers, btpChantierStats, btpSituations, btpReserves,
   } = useApp();
@@ -97,6 +97,12 @@ export function AccountantReceivables() {
       pushToast('Montant invalide.', 'ERROR');
       return;
     }
+    // L'acompte créances ne s'applique qu'aux projets Core (les chantiers BTP
+    // passent par la facturation de situations).
+    if (selectedProject.source === 'btp') {
+      pushToast('Chantier BTP : encaissez via la facturation de situations (module BTP).', 'ERROR');
+      return;
+    }
     if (amount > selectedProject.remaining) {
       pushToast(`Le montant (${fmt(amount)} GNF) dépasse la créance restante (${fmt(selectedProject.remaining)} GNF).`, 'ERROR');
       return;
@@ -112,9 +118,43 @@ export function AccountantReceivables() {
     });
 
     if (ok) {
+      // ══════════════════════════════════════════════════════════
+      // T9 : l'acompte est désormais un VRAI encaissement synchronisé —
+      // 1. il est inscrit dans l'échéancier (tranche PAID) donc la
+      //    créance affichée baisse réellement,
+      // 2. il génère l'écriture comptable VENTE (701/443) avec TVA,
+      // 3. il met à jour les statuts de paiement du projet.
+      // ══════════════════════════════════════════════════════════
+      const today = new Date().toISOString().slice(0, 10);
+      const proj = projects.find(p => p.id === selectedProject.id);
+      if (!proj) return;
+      const currentPlan = proj.paymentPlan || { status: 'DRAFT', installments: [] } as any;
+      const newInstallment = {
+        id: `acompte-${Date.now()}`,
+        name: paymentRef ? `Acompte (${paymentRef})` : 'Acompte',
+        percentage: 0,
+        amount,
+        expectedDate: today,
+        status: 'PAID',
+        paymentDate: new Date().toISOString(),
+      };
+      const installments = [...(currentPlan.installments || []), newInstallment];
+      const totalPaidNow = selectedProject.paidFromPlan + amount;
+      const fullyPaid = totalPaidNow >= (proj.budget || 0) - 0.5;
+      await updateProject({
+        ...proj,
+        paymentPlan: { ...currentPlan, installments },
+        paymentStatus: fullyPaid ? 'PAID' : 'PARTIAL',
+        status: fullyPaid ? 'PAYE' : 'EN_COURS',
+        accountantPaymentConfirm: true,
+      } as any);
+
+      // 2. Écriture comptable SYSCOHADA (701 HT / 443 TVA / 52x TTC)
+      await autoGenerateAccountingEntry('VENTE', amount, `Acompte créance — ${selectedProject.name}`);
+
       // Générer le reçu PDF
       const doc = {
-        id: Date.now().toString(),
+        id: newInstallment.id,
         amountPaid: amount,
         createdAt: new Date().toISOString(),
         balance: selectedProject.remaining - amount,
@@ -125,7 +165,7 @@ export function AccountantReceivables() {
       } catch { /* PDF non bloquant */ }
 
       await addNotification('COMMERCIAL', `Acompte de ${fmt(amount)} GNF enregistré pour « ${selectedProject.name} ». Restant : ${fmt(selectedProject.remaining - amount)} GNF.`, 'SUCCESS');
-      pushToast(`Acompte de ${fmt(amount)} GNF enregistré. Reçu téléchargé.`, 'SUCCESS');
+      pushToast(`Acompte de ${fmt(amount)} GNF enregistré (plan + écriture comptable mis à jour). Reçu téléchargé.`, 'SUCCESS');
       setShowPayment(null);
       setPaymentAmount('');
       setPaymentRef('');

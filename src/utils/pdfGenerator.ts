@@ -597,6 +597,123 @@ export const generateReceiptPDF = async (project: Project, doc: any, companyConf
 };
 
 /**
+ * T27 : Bulletin de paie (Guinée — CNSS / RTS)
+ * Généré depuis RhPayroll. Reprise de la charte éditoriale du reçu.
+ */
+export const generatePayslipPDF = async (payslip: any, employee: any, companyConfig: CompanyConfig) => {
+  const MONTHS_FR = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  const monthLabel = `${MONTHS_FR[(payslip.month || 1) - 1] || payslip.month} ${payslip.year || new Date().getFullYear()}`;
+  const empName = cleanText(`${employee?.firstName || ''} ${employee?.lastName || ''}`.trim() || 'EMPLOYÉ');
+  const ref = `PS-${payslip.id ? String(payslip.id).slice(0, 6).toUpperCase() : '------'}-${payslip.year || new Date().getFullYear()}`;
+  const dateStr = formatDate(new Date().toISOString());
+
+  const base = payslip.baseSalary || 0;
+  const overtime = payslip.overtimeAmount || 0;
+  const brut = payslip.grossSalary || (base + overtime);
+  const cnssEmp = payslip.cnssEmployeeAmount ?? payslip.employeeCnssAmount ?? 0;
+  const cnssPat = payslip.cnssEmployerAmount ?? payslip.employerCnssAmount ?? 0;
+  const rts = payslip.rtsAmount || 0;
+  const net = payslip.netSalary || (brut - cnssEmp - rts);
+  const coutTotal = net + cnssEmp + cnssPat + rts;
+
+  const line = (label: string, value: string, opts: any = {}) => ({
+    columns: [
+      { text: label, fontSize: 8, color: opts.strong ? COLORS.TEXT_MAIN : COLORS.TEXT_MUTED, characterSpacing: 1 },
+      { text: value, fontSize: opts.big ? 11 : 9, color: opts.color || COLORS.TEXT_MAIN, alignment: 'right', bold: !!opts.strong }
+    ],
+    margin: [0, 0, 0, 12]
+  });
+
+  const docDefinition: any = {
+    pageSize: 'A4',
+    pageMargins: [60, 80, 60, 80],
+    background: generateBackground(),
+    header: getStandardHeader('BULLETIN DE PAIE', monthLabel),
+    footer: getStandardFooter(companyConfig),
+    content: [
+      generateEditorialCover('BULLETIN', 'DE PAIE', empName, ref, dateStr, companyConfig),
+
+      {
+        columns: [
+          {
+            width: '50%',
+            stack: [
+              { text: 'EMPLOYEUR', fontSize: 7, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 15] },
+              { text: cleanText(companyConfig?.companyName || 'ENTREPRISE').toUpperCase(), fontSize: 12, color: COLORS.TEXT_MAIN, characterSpacing: 1, margin: [0, 0, 0, 8] },
+              { text: cleanText(companyConfig?.companyAddress || 'Conakry, République de Guinée').split(', ').join('\n'), fontSize: 9, color: COLORS.TEXT_MUTED, lineHeight: 1.5 }
+            ]
+          },
+          {
+            width: '50%',
+            stack: [
+              { text: 'SALARIÉ', fontSize: 7, color: COLORS.GOLD, characterSpacing: 3, margin: [0, 0, 0, 15] },
+              { text: empName.toUpperCase(), fontSize: 12, color: COLORS.TEXT_MAIN, characterSpacing: 1, margin: [0, 0, 0, 8] },
+              { text: cleanText(employee?.position || 'Poste non renseigné'), fontSize: 9, color: COLORS.TEXT_MUTED },
+              ...(employee?.cnssNumber ? [{ text: `N° CNSS : ${cleanText(employee.cnssNumber)}`, fontSize: 9, color: COLORS.TEXT_MUTED, margin: [0, 4, 0, 0] }] : [])
+            ]
+          }
+        ],
+        margin: [0, 0, 0, 50]
+      },
+
+      { text: `PÉRIODE : ${monthLabel.toUpperCase()}`, fontSize: 10, color: COLORS.GOLD, bold: true, characterSpacing: 2, margin: [0, 0, 0, 25] },
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 475, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], margin: [0, 0, 0, 20] },
+
+      line('Salaire de base', formatGNF(base)),
+      ...(overtime > 0 ? [line('Heures supplémentaires', formatGNF(overtime))] : []),
+      line('SALAIRE BRUT', formatGNF(brut), { strong: true }),
+
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 475, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], margin: [0, 5, 0, 20] },
+
+      line(`CNSS (part salarié ${companyConfig?.rhCnssEmployeeRate || 5}%)`, `- ${formatGNF(cnssEmp)}`),
+      line(`RTS (après abattement ${companyConfig?.rhRtsAbattement || 20}%)`, `- ${formatGNF(rts)}`),
+
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 1, lineColor: COLORS.GOLD }], margin: [0, 5, 0, 15] },
+      line('NET À PAYER', formatGNF(net), { strong: true, big: true, color: COLORS.GOLD }),
+
+      {
+        stack: [
+          { text: 'INFORMATION EMPLOYEUR (hors net)', fontSize: 7, color: COLORS.GOLD, characterSpacing: 2, margin: [0, 15, 0, 10] },
+          line(`CNSS (part patronale ${companyConfig?.rhCnssEmployerRate || 13}%)`, formatGNF(cnssPat)),
+          line('COÛT TOTAL EMPLOYEUR', formatGNF(coutTotal), { strong: true }),
+        ]
+      },
+
+      {
+        stack: [
+          { text: `Statut de la fiche : ${(payslip.status === 'PAID' ? 'PAYÉE' : payslip.status === 'VALIDATED' ? 'VALIDÉE' : 'BROUILLON')}. Document établi conformément à la réglementation du travail de la République de Guinée (CNSS, RTS).`, fontSize: 8, color: COLORS.TEXT_MUTED, lineHeight: 1.8, italics: true, alignment: 'justify' }
+        ],
+        margin: [0, 25, 0, 60 ]
+      },
+
+      {
+        columns: [
+          {
+            width: '50%',
+            stack: [
+              { text: 'SIGNATURE SALARIÉ', fontSize: 7, color: COLORS.TEXT_MUTED, characterSpacing: 2, margin: [0, 0, 0, 40] },
+              { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }] }
+            ]
+          },
+          {
+            width: '50%',
+            stack: [
+              { text: 'DIRECTION / RH', fontSize: 7, color: COLORS.TEXT_MUTED, characterSpacing: 2, margin: [0, 0, 0, 40], alignment: 'right' },
+              { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.5, lineColor: COLORS.BORDER_LIGHT }], alignment: 'right' }
+            ]
+          }
+        ],
+        pageBreak: 'avoid'
+      }
+    ],
+    defaultStyle: { font: 'Roboto' }
+  };
+
+  const filename = `Bulletin_${empName.replace(/\s+/g, '_')}_${payslip.month}-${payslip.year}.pdf`;
+  ensurePdfMake().then(m => m.createPdf(docDefinition)).then(d => d.download(filename));
+};
+
+/**
  * Génère le PDF d'un projet (facture proforma) sous forme de Blob.
  * Utilisé par l'archive ZIP (zipGenerator) et tout export programmatique.
  */

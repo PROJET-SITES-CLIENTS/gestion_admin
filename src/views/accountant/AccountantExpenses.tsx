@@ -4,7 +4,7 @@ import { Plus, CheckCircle, Receipt } from 'lucide-react';
 import { ExpenseCategory, Expense } from '../../types';
 
 export function AccountantExpenses() {
-  const { expenses, addExpense, updateExpenseStatus, treasuryAccounts, addTransaction, btpChantiers, companyConfig } = useApp();
+  const { expenses, addExpense, updateExpenseStatus, treasuryAccounts, addTransaction, btpChantiers, companyConfig, pushToast } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [chantierFilter, setChantierFilter] = useState('');
   const [newExp, setNewExp] = useState<Partial<Expense>>({
@@ -24,6 +24,12 @@ export function AccountantExpenses() {
 
   const handleAdd = () => {
     if (!newExp.description || !newExp.amountTTC) return;
+    // T11 : montant invalide ou négatif refusé
+    const ttc = Number(newExp.amountTTC);
+    if (!isFinite(ttc) || ttc <= 0) {
+      pushToast('Montant de dépense invalide : saisissez un montant strictement positif.', 'ERROR');
+      return;
+    }
     addExpense({
       category: newExp.category as ExpenseCategory,
       amountHT: newExp.amountHT || 0,

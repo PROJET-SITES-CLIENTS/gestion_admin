@@ -369,6 +369,9 @@ export default function ManagerView() {
                 <option value="COMMERCIAL">Commercial</option>
                 <option value="COMPTABLE">Comptable</option>
                 <option value="RH">Ressources Humaines</option>
+                {/* T30 : l'Assistante de Direction faisait partie du Core mais
+                    était impossible à créer depuis l'interface. */}
+                <option value="ASSISTANTE">Assistante de Direction</option>
                 <option value="GERANT">Gérant</option>
               </select>
             </div>
@@ -505,6 +508,76 @@ export default function ManagerView() {
                   </select>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* ══════════════════════════════════════════════════════
+              T31 : Identité entreprise & facturation — le Gérant
+              n'avait AUCUN écran pour ça (taux TVA non éditable,
+              identité enfermée côté comptable).
+              ══════════════════════════════════════════════════════ */}
+          <div className="mt-8 pt-8 border-t border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Settings size={16} className="text-slate-400" /> Identité Entreprise & Facturation
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Ces informations apparaissent sur les documents officiels (proformas, reçus, bulletins). Le taux de TVA s'applique à toute la facturation et à la comptabilité.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Raison sociale</label>
+                <input
+                  type="text" defaultValue={companyConfig.companyName || ''} key={`cn-${companyConfig.companyName}`}
+                  onBlur={e => { const v = e.target.value.trim(); if (v !== (companyConfig.companyName || '')) updateCompanyConfig({ companyName: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="Einsof Digit SARL"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Adresse</label>
+                <input
+                  type="text" defaultValue={companyConfig.companyAddress || ''} key={`ca-${companyConfig.companyAddress}`}
+                  onBlur={e => { const v = e.target.value.trim(); if (v !== (companyConfig.companyAddress || '')) updateCompanyConfig({ companyAddress: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="Conakry, République de Guinée"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Téléphone</label>
+                <input
+                  type="text" defaultValue={companyConfig.companyPhone || ''} key={`cp-${companyConfig.companyPhone}`}
+                  onBlur={e => { const v = e.target.value.trim(); if (v !== (companyConfig.companyPhone || '')) updateCompanyConfig({ companyPhone: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="+224 ..."
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Email officiel</label>
+                <input
+                  type="email" defaultValue={companyConfig.companyEmail || ''} key={`ce-${companyConfig.companyEmail}`}
+                  onBlur={e => { const v = e.target.value.trim(); if (v !== (companyConfig.companyEmail || '')) updateCompanyConfig({ companyEmail: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="contact@entreprise.gn"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Numéro d'identification fiscale</label>
+                <input
+                  type="text" defaultValue={companyConfig.companyId || ''} key={`ci-${companyConfig.companyId}`}
+                  onBlur={e => { const v = e.target.value.trim(); if (v !== (companyConfig.companyId || '')) updateCompanyConfig({ companyId: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="NIF"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Taux de TVA (%) — appliqué partout</label>
+                <input
+                  type="number" step="0.1" min={0} max={30} defaultValue={companyConfig.tvaRate ?? 18} key={`tva-${companyConfig.tvaRate}`}
+                  onBlur={e => {
+                    const v = Number(e.target.value);
+                    if (isFinite(v) && v >= 0 && v <= 30 && v !== (companyConfig.tvaRate ?? 18)) {
+                      updateCompanyConfig({ tvaRate: v });
+                      pushToast(`Taux de TVA fixé à ${v} %.`, 'SUCCESS');
+                    }
+                  }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm font-semibold" placeholder="18"
+                />
+              </div>
             </div>
           </div>
 

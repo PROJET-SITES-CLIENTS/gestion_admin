@@ -3,17 +3,31 @@ import { useApp } from '../store';
 import { Users, Search, Plus, UserCircle, Briefcase, Phone, Mail, MapPin, X, Check, Save } from 'lucide-react';
 
 export const RhEmployees: React.FC = () => {
-  const { employees, addEmployee, currentRole } = useApp();
+  const { employees, addEmployee, currentRole, currentUser } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(employees.length === 1 ? employees[0].id : null);
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const filtered = employees.filter(e => 
-    (e.firstName + ' ' + e.lastName).toLowerCase().includes(searchTerm.toLowerCase()) || 
+  // ══════════════════════════════════════════════════════════
+  // T28 : un employé non-RH ne voit QUE son propre dossier.
+  // Rapprochement par userId (fiable) ou par nom complet (fallback).
+  // ══════════════════════════════════════════════════════════
+  const isHR = currentRole === 'GERANT' || currentRole === 'RH';
+  const normalize = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const myEmployee = !isHR && currentUser
+    ? employees.find(e =>
+        e.userId === currentUser.id ||
+        normalize(`${e.firstName} ${e.lastName}`) === normalize(`${currentUser.firstName} ${currentUser.lastName}`)
+      )
+    : undefined;
+  const visibleEmployees = isHR ? employees : (myEmployee ? [myEmployee] : []);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(visibleEmployees.length === 1 ? visibleEmployees[0].id : null);
+
+  const filtered = visibleEmployees.filter(e =>
+    (e.firstName + ' ' + e.lastName).toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.position.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
+  const selectedEmployee = visibleEmployees.find(e => e.id === selectedEmployeeId);
 
   const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -77,7 +91,9 @@ export const RhEmployees: React.FC = () => {
             </div>
           ))}
           {filtered.length === 0 && (
-            <div className="text-center py-10 text-slate-500 text-sm">Aucun employé trouvé.</div>
+            <div className="text-center py-10 text-slate-500 text-sm">
+              {isHR ? 'Aucun employé trouvé.' : 'Aucun dossier RH n\'est lié à votre compte utilisateur. Contactez le service RH.'}
+            </div>
           )}
         </div>
       </div>
