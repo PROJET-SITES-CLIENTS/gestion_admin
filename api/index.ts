@@ -526,9 +526,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db.insert('employees', emp);
       return res.status(201).json(emp);
     }
-    if (route === 'rh' && param1 === 'employees' && param2 === 'update') {
+    if (route === 'rh' && param1 === 'employees' && param2 && param3 === 'update') {
       const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
-      const updated = await db.update('employees', param1, sanitize(body));
+      const updated = await db.update('employees', param2, sanitize(body));
       if (!updated) return res.status(404).json({ error: 'Employé non trouvé.' });
       return res.json(updated);
     }
@@ -544,9 +544,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db.insert('leave_requests', lr);
       return res.status(201).json(lr);
     }
-    if (route === 'rh' && param1 === 'leaves' && param2 === 'update') {
+    if (route === 'rh' && param1 === 'leaves' && param2 && param3 === 'update') {
       const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
-      const updated = await db.update('leave_requests', param1, sanitize(body));
+      const updated = await db.update('leave_requests', param2, sanitize(body));
       if (!updated) return res.status(404).json({ error: 'Demande non trouvée.' });
       return res.json(updated);
     }
@@ -565,19 +565,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db.insert('payslips', ps);
       return res.status(201).json(ps);
     }
-    if (route === 'rh' && param1 === 'payslips' && param2 === 'update') {
+    if (route === 'rh' && param1 === 'payslips' && param2 && param3 === 'update') {
       const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
       // T26 : machine à états stricte DRAFT → VALIDATED → PAID (pas de re-paiement)
       if ((body as any)?.status) {
         const current = await db.getTable('payslips');
-        const target = current.find((p: any) => p.id === param1);
+        const target = current.find((p: any) => p.id === param2);
         const newStatus = (body as any).status;
         const ALLOWED: Record<string, string[]> = { DRAFT: ['VALIDATED'], VALIDATED: ['PAID'], PAID: [] };
         if (target && !(ALLOWED[target.status] || []).includes(newStatus)) {
           return res.status(400).json({ error: `Transition interdite : ${target.status} → ${newStatus}.` });
         }
       }
-      const updated = await db.update('payslips', param1, sanitize(body));
+      const updated = await db.update('payslips', param2, sanitize(body));
       if (!updated) return res.status(404).json({ error: 'Bulletin non trouvé.' });
       return res.json(updated);
     }
