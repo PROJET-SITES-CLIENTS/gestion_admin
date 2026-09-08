@@ -66,8 +66,12 @@ const db = {
   },
   async delete(collection: string, id: string): Promise<boolean> {
     const sql = getSql();
-    const result: any = await sql`DELETE FROM documents WHERE collection = ${collection} AND id = ${id}`;
-    return Array.isArray(result) ? result.length > 0 : (result?.count ?? 0) > 0;
+    // Le driver Neon (HTTP) renvoie un tableau vide pour les DELETE, même
+    // avec RETURNING — on vérifie donc l'existence AVANT de supprimer.
+    const existing = await sql`SELECT id FROM documents WHERE collection = ${collection} AND id = ${id}`;
+    if (!Array.isArray(existing) || existing.length === 0) return false;
+    await sql`DELETE FROM documents WHERE collection = ${collection} AND id = ${id}`;
+    return true;
   },
   async getAllData(): Promise<Record<string, any[]>> {
     const sql = getSql();
