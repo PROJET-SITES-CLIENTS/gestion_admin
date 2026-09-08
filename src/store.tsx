@@ -164,7 +164,7 @@ interface AppContextType {
   updateBtpHabilitation: (id: string, updates: Partial<BtpHabilitation>) => Promise<void>;
   btpSousTraitances: BtpSousTraitance[];
   createBtpSousTraitance: (st: Omit<BtpSousTraitance, 'id' | 'statut' | 'created_by'>) => Promise<void>;
-  solderBtpSousTraitance: (id: string) => Promise<void>;
+  solderBtpSousTraitance: (id: string, evaluation?: { note_globale?: number; commentaire?: string }) => Promise<void>;
   btpFournisseurs: BtpFournisseur[];
   createBtpFournisseur: (f: Omit<BtpFournisseur, 'id'>) => Promise<void>;
   btpCautionnements: BtpCautionnement[];
@@ -513,13 +513,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // ══════════════════════════════════════════════════════════
         // P2-4 : NOTIFICATIONS AUTOMATIQUES BTP (CDC §10)
-        // Déclenchées par le polling 15s, anti-doublon par message
+        // B-8 : déduplication par CLÉ persistée côté serveur (les fenêtres
+        // sont désormais des PLAGES — l'alerte n'est plus perdue si personne
+        // n'était connecté le jour exact, et ne peut plus être spammée quand
+        // plusieurs rôles sont connectés simultanément).
         // ══════════════════════════════════════════════════════════
-        const existingNotifMsgs = new Set((data.notifications || []).map((n: any) => n.message));
-        const checkAutoNotif = async (targetRole: string, message: string, type: string = 'WARNING') => {
-          if (existingNotifMsgs.has(message)) return;
-          await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({ targetRole, message, type }) }).catch(() => {});
-          existingNotifMsgs.add(message);
+        const checkAutoNotif = async (targetRole: string, message: string, type: string = 'WARNING', dedupKey?: string) => {
+          await apiFetch('/notifications', {
+            method: 'POST',
+            body: JSON.stringify({ targetRole, message, type, ...(dedupKey ? { dedupKey } : {}) }),
+          }).catch(() => {});
         };
 
         // 1. Dépassement budget chantier (> 90% consommé)
@@ -529,32 +532,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!chantier || !chantier.budget_initial) continue;
           const ratio = (stat.budget_engage + (stat.cout_mo_reel || 0) + (stat.cout_engins || 0)) / chantier.budget_initial;
           if (ratio > 0.9 && ratio <= 1.0) {
-            await checkAutoNotif('COND_TRAVAUX', `ALERTE BUDGET : « ${chantier.nom} » a consommé ${Math.round(ratio * 100)}% du budget.`, 'WARNING');
+            await checkAutoNotif('COND_TRAVAUX', `ALERTE BUDGET : « ${chantier.nom} » a consommé ${Math.round(ratio * 100)}% du budget.`, 'WARNING', `btp-budget90-${chantier.id}`);
           } else if (ratio > 1.0) {
-            await checkAutoNotif('GERANT', `DÉPASSEMENT : « ${chantier.nom} » a dépassé le budget de ${Math.round((ratio - 1) * 100)}%.`, 'ERROR');
+            await checkAutoNotif('GERANT', `DÉPASSEMENT : « ${chantier.nom} » a dépassé le budget de ${Math.round((ratio - 1) * 100)}%.`, 'ERROR', `btp-budget100-${chantier.id}`);
           }
         }
 
-        // 2. Date limite de dépôt d'offre approchant (J-3)
+        // 2. Date limite de dépôt d'offre (plages J-3 → J-1, puis jour J et après)
         for (const offre of (data.btpOffres || [])) {
           if (['déposée', 'gagnée', 'perdue', 'retirée'].includes(offre.statut)) continue;
           if (!offre.date_limite_depot) continue;
           const daysLeft = Math.ceil((new Date(offre.date_limite_depot).getTime() - now.getTime()) / 86400000);
-          if (daysLeft === 3) {
-            await checkAutoNotif('ETUDES', `DATE LIMITE (J-3) : offre « ${offre.objet} » à déposer avant le ${new Date(offre.date_limite_depot).toLocaleDateString('fr-FR')}.`, 'WARNING');
-          } else if (daysLeft === 0) {
-            await checkAutoNotif('GERANT', `DATE LIMITE AUJOURD'HUI : offre « ${offre.objet} » (${offre.client}).`, 'ERROR');
+          if (daysLeft <= 3 && daysLeft >= 1) {
+            await checkAutoNotif('ETUDES', `DATE LIMITE (J-${daysLeft}) : offre « ${offre.objet} » à déposer avant le ${new Date(offre.date_limite_depot).toLocaleDateString('fr-FR')}.`, 'WARNING', `btp-offre-j3-${offre.id}`);
+          } else if (daysLeft <= 0) {
+            await checkAutoNotif('GERANT', `DATE LIMITE DÉPASSÉE : offre « ${offre.objet} » (${offre.client}).`, 'ERROR', `btp-offre-j0-${offre.id}`);
           }
         }
 
-        // 3. Habilitation expirant sous 30 jours
+        // 3. Habilitation expirant sous 30 jours (plage J-30 → J-1, puis expirée)
         for (const hab of (data.btpHabilitations || [])) {
           if (!hab.date_expiration || hab.statut === 'expiree') continue;
           const daysLeft = Math.ceil((new Date(hab.date_expiration).getTime() - now.getTime()) / 86400000);
-          if (daysLeft === 30) {
-            await checkAutoNotif('RH', `HABILITATION (J-30) : ${hab.type_habilitation} expire le ${new Date(hab.date_expiration).toLocaleDateString('fr-FR')}.`, 'WARNING');
+          if (daysLeft <= 30 && daysLeft >= 1) {
+            await checkAutoNotif('RH', `HABILITATION (J-${daysLeft}) : ${hab.type_habilitation} expire le ${new Date(hab.date_expiration).toLocaleDateString('fr-FR')}.`, 'WARNING', `btp-hab-j30-${hab.id}`);
           } else if (daysLeft <= 0) {
-            await checkAutoNotif('RH', `HABILITATION EXPIRÉE : ${hab.type_habilitation} (depuis le ${new Date(hab.date_expiration).toLocaleDateString('fr-FR')}). Affectation bloquée.`, 'ERROR');
+            await checkAutoNotif('RH', `HABILITATION EXPIRÉE : ${hab.type_habilitation} (depuis le ${new Date(hab.date_expiration).toLocaleDateString('fr-FR')}). Affectation bloquée.`, 'ERROR', `btp-hab-expiree-${hab.id}`);
           }
         }
 
@@ -569,19 +572,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             else if (m.type === 'retour') stockDepot += m.quantite;
           }
           if (stockDepot <= art.seuil_alerte) {
-            await checkAutoNotif('MAGASINIER_BTP', `STOCK BAS : ${art.designation} — ${stockDepot} ${art.unite} restant(s) (seuil: ${art.seuil_alerte}).`, 'WARNING');
+            await checkAutoNotif('MAGASINIER_BTP', `STOCK BAS : ${art.designation} — ${stockDepot} ${art.unite} restant(s) (seuil: ${art.seuil_alerte}).`, 'WARNING', `btp-stock-${art.id}`);
           }
         }
 
-        // 5. Chantier en retard (date_fin_prevue dépassée)
+        // 5. Chantier en retard (plages : J+1..J+6 → conducteur, J+7 et plus → direction)
         for (const chantier of (data.btpChantiers || [])) {
           if (['clôturé', 'réception_définitive'].includes(chantier.statut)) continue;
           if (!chantier.date_fin_prevue) continue;
           const daysLate = Math.floor((now.getTime() - new Date(chantier.date_fin_prevue).getTime()) / 86400000);
-          if (daysLate === 1) {
-            await checkAutoNotif('COND_TRAVAUX', `RETARD (J+1) : « ${chantier.nom} » a dépassé sa date de fin prévue.`, 'WARNING');
-          } else if (daysLate === 7) {
-            await checkAutoNotif('GERANT', `RETARD (J+7) : « ${chantier.nom} » en retard de 7 jours. Pénalités éventuelles.`, 'ERROR');
+          if (daysLate >= 1 && daysLate < 7) {
+            await checkAutoNotif('COND_TRAVAUX', `RETARD (J+${daysLate}) : « ${chantier.nom} » a dépassé sa date de fin prévue.`, 'WARNING', `btp-retard-j1-${chantier.id}`);
+          } else if (daysLate >= 7) {
+            await checkAutoNotif('GERANT', `RETARD (J+${daysLate}) : « ${chantier.nom} » en retard de ${daysLate} jours. Pénalités éventuelles.`, 'ERROR', `btp-retard-j7-${chantier.id}`);
+          }
+        }
+
+        // 6. B-19 : cautionnement arrivant à échéance (J-30 → direction)
+        for (const caut of (data.btpCautionnements || [])) {
+          if (!caut.date_fin || caut.statut !== 'active' || !caut.chantier_id) continue;
+          const daysLeft = Math.ceil((new Date(caut.date_fin).getTime() - now.getTime()) / 86400000);
+          if (daysLeft <= 30) {
+            await checkAutoNotif('GERANT', `CAUTIONNEMENT ${caut.type || ''} : échéance le ${new Date(caut.date_fin).toLocaleDateString('fr-FR')}${daysLeft < 0 ? ' (DÉPASSÉE)' : ` (J-${daysLeft})`}. Montant : ${(caut.montant || 0).toLocaleString('fr-FR')} GNF.`, daysLeft < 0 ? 'ERROR' : 'WARNING', `btp-caution-${caut.id}`);
           }
         }
 
@@ -872,7 +884,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * le même numéro (le compteur est relu et persisté avant de rendre le suivant).
    */
   const docNumberMutexRef = useRef<Promise<unknown>>(Promise.resolve());
-  const getNextDocNumber = async (prefix: 'PRO' | 'REC' | 'FAC'): Promise<string> => {
+  const getNextDocNumber = async (prefix: 'PRO' | 'REC' | 'FAC' | 'MAR' | 'SIT'): Promise<string> => {
     const run = async (): Promise<string> => {
       const year = new Date().getFullYear();
       const counters = { ...((companyConfigRef.current as any)?.docCounters || {}) };
@@ -1628,11 +1640,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const o = btpOffres.find(x => x.id === id);
       if (!o) return;
 
-      // Garde d'unicité : ne pas créer un 2e chantier si un existe déjà
+      // B-4 : gardes élargies — on vérifie le MARCHÉ et le CHANTIER.
+      // (Avant, seul le chantier était testé : un marché créé avec un
+      // chantier en échec générait un doublon MAR au 2e clic.)
       const chantierExistant = btpChantiers.some(c => c.offre_id === id);
-      if (chantierExistant) {
+      const marcheExistant = btpMarches.find(m => m.offre_id === id);
+      if (chantierExistant && marcheExistant) {
         pushToast('Un chantier existe déjà pour cette offre.', 'WARNING');
-        return; // Ne pas persister le statut si le chantier existe déjà
+        return; // Ne pas persister le statut si tout existe déjà
       }
 
       // Garde montant : refuser budget 0 (offre non chiffrée)
@@ -1650,6 +1665,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = await crudUpdate('btpOffres', id, updates, 'Mise à jour offre');
     if (updated) setBtpOffres(prev => prev.map(o => o.id === id ? updated : o));
 
+    // ══════════════════════════════════════════════════════════
+    // B-14 : une offre PERDUE referme le prospect CRM à l'identique
+    // du flux gagné (avant : le prospect restait actif à jamais).
+    // ══════════════════════════════════════════════════════════
+    if (status === 'perdue') {
+      const o = btpOffres.find(x => x.id === id);
+      if (o && (o as any).prospect_id) {
+        const prospect = prospects.find(p => p.id === (o as any).prospect_id);
+        if (prospect && !['PERDU', 'GAGNE'].includes(prospect.stage)) {
+          await updateProspect((o as any).prospect_id, {
+            stage: 'PERDU',
+            history: [...(prospect.history || []), {
+              id: Date.now().toString(),
+              date: new Date().toISOString(),
+              action: `Offre BTP perdue — ${o.objet} (montant proposé : ${(o.montant_estime || 0).toLocaleString('fr-FR')} GNF)`,
+              user: currentUser?.username || 'system',
+            }],
+          });
+        }
+      }
+    }
+
     if (status === 'gagnée') {
       const o = btpOffres.find(x => x.id === id);
       if (o) {
@@ -1658,29 +1695,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try { budgetDetail = o.chiffrage_json ? JSON.parse(o.chiffrage_json) : undefined; } catch { /* chiffrage illisible : ignoré */ }
 
         // CDC : créer automatiquement un marché brouillon lié à cette offre
+        // B-4/B-15 : numérotation MAR via le mutex de getNextDocNumber
+        // (atomique) + réutilisation du marché s'il existe déjà (reprise
+        // après échec partiel : marché créé, chantier en échec).
         const tvaRate = (companyConfig?.tvaRate || 18);
         const montantHT = o.montant_estime;
         const montantTTC = Math.round(montantHT * (1 + tvaRate / 100));
-        const year = new Date().getFullYear();
-        const counters = companyConfig?.docCounters || {};
-        const nextMAR = ((counters as any)[`MAR_${year}`] || 0) + 1;
-        const numeroMAR = `MAR-${year}-${String(nextMAR).padStart(3, '0')}`;
 
-        const marche = await crudCreate<BtpMarche>('btpMarches', {
-          numero: numeroMAR,
-          offre_id: o.id,
-          client_nom: o.client,
-          objet: o.objet,
-          montant_ht: montantHT,
-          tva_rate: tvaRate,
-          montant_ttc: montantTTC,
-          retenue_garantie_pct: 5,
-          statut: 'brouillon',
-        }, 'Création marché auto');
-        if (marche) setBtpMarches(prev => [...prev, marche]);
-
-        // BUG 7 FIX : Propager la RG du marché au chantier + incrémenter le compteur MAR
-        updateCompanyConfig({ ...companyConfig, docCounters: { ...counters, [`MAR_${year}`]: nextMAR } } as any);
+        const marcheExistant = btpMarches.find(m => m.offre_id === id);
+        let marche = marcheExistant;
+        if (!marche) {
+          const numeroMAR = await getNextDocNumber('MAR');
+          marche = await crudCreate<BtpMarche>('btpMarches', {
+            numero: numeroMAR,
+            offre_id: o.id,
+            client_nom: o.client,
+            objet: o.objet,
+            montant_ht: montantHT,
+            tva_rate: tvaRate,
+            montant_ttc: montantTTC,
+            retenue_garantie_pct: 5,
+            statut: 'brouillon',
+          }, 'Création marché auto');
+          if (marche) setBtpMarches(prev => [...prev, marche]);
+        }
+        const numeroMAR = marche?.numero || '';
 
         await createBtpChantier({
           offre_id: o.id,
@@ -1734,6 +1773,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (status === 'en_cours' && chantier.statut === 'planification' && (!chantier.rh_validation || !chantier.materiel_validation)) {
       throw new Error("Validation RH et Matériel obligatoires avant le démarrage du chantier.");
+    }
+
+    // B-12 : la réception définitive exige que toutes les réserves
+    // soient levées (le PV définitif l'atteste par écrit).
+    if (status === 'réception_définitive') {
+      const ouvertes = btpReserves.filter(r =>
+        r.chantier_id === id && !['levée', 'levee', 'annulée', 'annulee'].includes(r.statut));
+      if (ouvertes.length > 0) {
+        throw new Error(`Réception définitive impossible : ${ouvertes.length} réserve(s) non levée(s).`);
+      }
     }
 
     // À la suspension : reset des unlocks pour forcer une nouvelle double validation
@@ -1870,7 +1919,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createBtpSituation = async (situation: Omit<BtpSituationTravaux, 'id' | 'statut'>) => {
-    const created = await crudCreate<BtpSituationTravaux>('btpSituations', situation, 'Situation de travaux');
+    // B-15 : numéro légal SIT-2026-NNN (traçabilité documentaire)
+    const numero = await getNextDocNumber('SIT');
+    const created = await crudCreate<BtpSituationTravaux>('btpSituations', { ...situation, numero } as any, 'Situation de travaux');
     if (created) setBtpSituations(prev => [...prev, created]);
   };
 
@@ -1902,14 +1953,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ));
 
         // ══════════════════════════════════════════════════════════
-        // SYNERGIE B : Écriture comptable VENTE (SYSCOHADA 701/443)
-        // Les situations BTP facturées alimentent le grand livre
-        // et la TVA collectée — sans ça, la TVA BTP est invisible
-        // dans la déclaration fiscale
+        // B-1 : l'écriture SYSCOHADA est désormais générée CÔTÉ SERVEUR
+        // dans l'endpoint atomique — Débit 52x = net, Débit 411 = RG,
+        // Crédit 701 = HT réel, Crédit 443 = TVA réelle. L'ancienne
+        // écriture client (base net + TVA rétrocalculée) est retirée.
         // ══════════════════════════════════════════════════════════
-        await autoGenerateAccountingEntry('VENTE', d.transaction.amount, `Situation BTP — ${d.chantier_nom || situationId.slice(0, 8)}`);
+        if (d.accountingEntry) setAccountingEntries(prev => [...prev, d.accountingEntry]);
+        if (d.accountingWarning) pushToast(d.accountingWarning, 'WARNING');
 
-        pushToast(`Situation facturée : ${d.transaction.amount.toLocaleString('fr-FR')} GNF encaissés (écriture comptable générée).`, 'SUCCESS');
+        pushToast(`Situation facturée : ${d.transaction.amount.toLocaleString('fr-FR')} GNF encaissés${d.accountingEntry ? ' (écriture comptable générée)' : ''}.`, 'SUCCESS');
         return true;
       }
       pushToast(await readApiError(res, 'Facturation impossible'), 'ERROR');
@@ -2053,9 +2105,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (created) setBtpSousTraitances(prev => [...prev, created]);
   };
 
-  const solderBtpSousTraitance = async (id: string) => {
-    const updated = await crudUpdate('btpSousTraitances', id, { statut: 'soldée' }, 'Solde sous-traitance');
+  const solderBtpSousTraitance = async (id: string, evaluation?: { note_globale?: number; commentaire?: string }) => {
+    const st = btpSousTraitances.find(s => s.id === id);
+    const updated = await crudUpdate('btpSousTraitances', id, {
+      statut: 'soldée',
+      ...(evaluation ? { evaluation } : {}),
+    } as any, 'Solde sous-traitance');
     if (updated) setBtpSousTraitances(prev => prev.map(s => s.id === id ? updated : s));
+
+    // ══════════════════════════════════════════════════════════
+    // B-6 : solder une sous-traitance crée désormais la DÉPENSE
+    // Core correspondante (PENDING, rattachée au chantier) — avant,
+    // le paiement du sous-traitant était financièrement invisible.
+    // ══════════════════════════════════════════════════════════
+    if (updated && st) {
+      const tvaRate = (companyConfig?.tvaRate || 18) / 100;
+      const ht = Number(st.montant) || 0;
+      const tva = Math.round(ht * tvaRate);
+      try {
+        const res = await apiFetch('/expenses', {
+          method: 'POST',
+          body: JSON.stringify({
+            category: 'AUTRE',
+            amountHT: ht,
+            tvaAmount: tva,
+            amountTTC: ht + tva,
+            description: `Sous-traitance soldée — ${st.entreprise} (${st.objet})`,
+            date: new Date().toISOString().slice(0, 10),
+            chantier_id: st.chantier_id || '',
+            status: 'PENDING',
+          }),
+        });
+        if (res.ok) {
+          const expense = await res.json();
+          setExpenses(prev => [...prev, expense]);
+          await addNotification('COMPTABLE', `Sous-traitance soldée (${st.entreprise}) : dépense de ${(ht + tva).toLocaleString('fr-FR')} GNF TTC en attente de paiement.`, 'INFO');
+        }
+      } catch { /* la dépense pourra être saisie manuellement */ }
+    }
   };
 
   const createBtpFournisseur = async (f: Omit<BtpFournisseur, 'id'>) => {
@@ -2082,9 +2169,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             acc.id === accountId ? { ...acc, balance: acc.balance + d.transaction.amount } : acc
           ));
         }
+        // B-1 : écriture de libération RG (Débit 52x / Crédit 411) serveur
+        if (d.accountingEntry) setAccountingEntries(prev => [...prev, d.accountingEntry]);
+        if (d.accountingWarning) pushToast(d.accountingWarning, 'WARNING');
         // Les situations libérées seront rechargées au prochain fetchData.
         fetchData();
-        pushToast(`Retenues libérées : ${(d.total_libere ?? 0).toLocaleString('fr-FR')} GNF encaissés.`, 'SUCCESS');
+        pushToast(`Retenues libérées : ${(d.total_libere ?? 0).toLocaleString('fr-FR')} GNF encaissés${d.accountingEntry ? ' (écriture générée)' : ''}.`, 'SUCCESS');
         return true;
       }
       pushToast(await readApiError(res, 'Libération impossible'), 'ERROR');
@@ -2121,15 +2211,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- MARCHÉS ---
   const createBtpMarche = async (m: Omit<BtpMarche, 'id' | 'statut' | 'created_by'>) => {
-    // Numérotation légale
-    const year = new Date().getFullYear();
-    const counters = companyConfig?.docCounters || {};
-    const next = ((counters as any)[`MAR_${year}`] || 0) + 1;
-    const numero = `MAR-${year}-${String(next).padStart(3, '0')}`;
+    // B-15 : numérotation légale ATOMIQUE (mutex partagé PRO/REC/MAR/SIT)
+    const numero = await getNextDocNumber('MAR');
     const created = await crudCreate<BtpMarche>('btpMarches', { ...m, numero }, 'Création marché');
     if (created) {
       setBtpMarches(prev => [...prev, created]);
-      updateCompanyConfig({ ...companyConfig, docCounters: { ...counters, [`MAR_${year}`]: next } } as any);
       await addNotification('GERANT', `Marché ${numero} créé pour « ${m.client_nom} » (${m.montant_ttc.toLocaleString('fr-FR')} GNF TTC).`, 'INFO');
     }
   };

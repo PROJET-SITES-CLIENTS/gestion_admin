@@ -49,10 +49,14 @@ export const BtpDashboardView = () => {
 
   const situationsFacturees = btpSituations.filter(s => s.statut === 'facturée').reduce((a, s) => a + s.montant_facture, 0);
   const retenuesBloquees = btpChantierStats.reduce((a, s) => a + (s.retenue_bloquee ?? 0), 0);
+  // B-5 : marge UNIFIÉE avec la fiche chantier et la clôture — matériaux =
+  // max(budget_engage, cout_stock_sorti) pour éviter le double comptage
+  // (un BC réceptionné crée une dépense PUIS une sortie valorisée).
   const margeGlobale = btpChantiers.reduce((acc, c) => {
     const st = statById.get(c.id);
     if (!st) return acc;
-    return acc + (c.budget_initial || 0) - st.budget_engage - st.cout_mo_reel - (st.cout_engins ?? 0) - (st.cout_sous_traitance ?? 0);
+    const coutsMatieres = Math.max(st.budget_engage ?? 0, st.cout_stock_sorti ?? 0);
+    return acc + (c.budget_initial || 0) - coutsMatieres - st.cout_mo_reel - (st.cout_engins ?? 0) - (st.cout_sous_traitance ?? 0);
   }, 0);
 
   // Chantiers en retard (fin prévue dépassée, non clôturés)
@@ -152,7 +156,7 @@ export const BtpDashboardView = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4">
         <Stat label="Chantiers actifs" value={String(actifs.length)} icon={<HardHat size={17} />} accent="gold" hint={`${planification.length} en planification`} />
         <Stat label="Avancement pondéré" value={`${avancementPondere} %`} icon={<Activity size={17} />} accent="blue" hint="pondéré par budget" />
-        <Stat label="Situations facturées" value={fmt(situationsFacturees)} icon={<TrendingUp size={17} />} accent="emerald" hint="encaissées en trésorerie" />
+        <Stat label="Situations facturées" value={fmt(situationsFacturees)} icon={<TrendingUp size={17} />} accent="emerald" hint="montant TTC (le net, hors RG, est encaissé)" />
         <Stat label="Marge prévisionnelle" value={fmt(margeGlobale)} icon={<Wallet size={17} />} accent={margeGlobale >= 0 ? 'gold' : 'rose'} hint="budget − dépenses − MO − engins − ST" />
         <Stat label="Retenues bloquées" value={fmt(retenuesBloquees)} icon={<Lock size={17} />} accent="amber" hint="libérables à la réception définitive" />
         <Stat

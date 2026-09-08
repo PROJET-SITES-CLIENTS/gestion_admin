@@ -58,7 +58,7 @@ export const BtpPermissionsMatrix: React.FC = () => {
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center">
-        <p className="text-[12px] text-slate-500">Contrôle fin des actions par rôle (CDC §3.3). Un ✅ = autorisé.</p>
+        <p className="text-[12px] text-slate-500">Contrôle fin des actions par rôle (CDC §3.3). Un ✅ = autorisé. <strong className="text-slate-600">Appliquée côté serveur</strong> : créer un chantier/commande, affecter, valider une situation ou clôturer devient impossible pour un rôle décoché, même par appel API direct.</p>
         <button onClick={resetDefaults} className="btn btn-ghost !py-1 !px-2.5 !text-[10.5px]">Réinitialiser</button>
       </div>
       <div className="overflow-x-auto">

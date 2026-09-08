@@ -296,7 +296,7 @@ export const BtpQhseView = () => {
             >
               <select required className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" value={newHab.employee_id} onChange={e => setNewHab({ ...newHab, employee_id: e.target.value })}>
                 <option value="">Sélectionner un employé…</option>
-                {btpEmployeeDirectory.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName} ({e.matricule || 'N/A'})</option>)}
+                {btpEmployeeDirectory.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}{e.position ? ` (${e.position})` : ''}</option>)}
               </select>
               <input required type="text" className="w-full border-slate-300 rounded-lg p-2.5 border text-sm" placeholder="Type (ex: CACES R482, Habilitation H0B0...)" value={newHab.type_habilitation} onChange={e => setNewHab({ ...newHab, type_habilitation: e.target.value })} />
               <div className="grid grid-cols-2 gap-3">

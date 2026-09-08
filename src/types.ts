@@ -701,6 +701,7 @@ export interface BtpEngin {
 export interface BtpSituationTravaux {
   id: string;
   chantier_id: string;
+  numero?: string; // SIT-2026-NNN (B-15 : traçabilité documentaire)
   periode: string;
   pct_avancement_declare: number;
   montant_facture: number;

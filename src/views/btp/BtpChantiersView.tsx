@@ -73,11 +73,6 @@ export const BtpChantiersView = () => {
   const tvaRate = (companyConfig.tvaRate || 18) / 100;
   const retenuePct = selectedChantier?.retenue_garantie_pct || 0;
 
-  const handleLiberer = async (cautionId: string) => {
-    try { await libererBtpRetenues(selectedChantierId!, cautionId); }
-    catch (err: any) { alert(err.message); }
-  };
-
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedChantierId || newExpense.amountHT <= 0) return;
@@ -382,14 +377,29 @@ export const BtpChantiersView = () => {
                 {c.statut === 'en_cours' && (currentRole === 'COND_TRAVAUX' || currentRole === 'GERANT') && (
                   <div className="space-y-1.5">
                     <button
-                      onClick={(e) => { e.stopPropagation(); updateBtpChantierStatus(c.id, 'réception_provisoire'); generatePvPDF(c, 'provisoire', companyConfig); }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await updateBtpChantierStatus(c.id, 'réception_provisoire');
+                          generatePvPDF(c, 'provisoire', companyConfig);
+                          // Le PV est archivé en GED (condition de la checklist de clôture)
+                          addBtpDocument({ chantier_id: c.id, type: 'pv_reception', nom: `PV réception provisoire — ${c.nom}`, description: 'Généré automatiquement à la réception provisoire.' });
+                        } catch (err: any) { alert(err.message); }
+                      }}
                       className="w-full py-2 bg-indigo-600 text-white rounded-lg text-[12.5px] font-semibold hover:bg-indigo-700"
                     >Réception Provisoire + PV</button>
                   </div>
                 )}
                 {c.statut === 'réception_provisoire' && (currentRole === 'COND_TRAVAUX' || currentRole === 'GERANT') && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); updateBtpChantierStatus(c.id, 'réception_définitive'); generatePvPDF(c, 'définitive', companyConfig); }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        await updateBtpChantierStatus(c.id, 'réception_définitive');
+                        generatePvPDF(c, 'définitive', companyConfig);
+                        addBtpDocument({ chantier_id: c.id, type: 'pv_reception', nom: `PV réception définitive — ${c.nom}`, description: 'Généré automatiquement à la réception définitive (déclenche la libération RG).' });
+                      } catch (err: any) { alert(err.message); }
+                    }}
                     className="w-full py-2 bg-emerald-600 text-white rounded-lg text-[12.5px] font-semibold hover:bg-emerald-700"
                   >Réception Définitive + PV (libère RG)</button>
                 )}
@@ -506,8 +516,8 @@ export const BtpChantiersView = () => {
                 {(currentRole === 'GERANT' || currentRole === 'COND_TRAVAUX') && (
                   <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="label">Retenue de garantie (%)</label>
-                      <input type="number" min={0} max={50} className="input !py-1.5"
+                      <label className="label">Retenue de garantie (%) {currentRole !== 'GERANT' && <span className="text-slate-400 normal-case">(Gérant seul)</span>}</label>
+                      <input type="number" min={0} max={50} className="input !py-1.5" disabled={currentRole !== 'GERANT'}
                         defaultValue={retenuePct} key={`rg-${selectedChantier.id}-${retenuePct}`}
                         onBlur={e => { const v = Math.min(50, Math.max(0, Number(e.target.value))); if (v !== retenuePct) updateBtpChantier(selectedChantier.id, { retenue_garantie_pct: v }); }} />
                     </div>
@@ -731,7 +741,7 @@ export const BtpChantiersView = () => {
                         return (
                           <div key={sit.id} className="bg-slate-50/70 p-3 rounded-lg border border-slate-100 text-[12px]">
                             <div className="flex justify-between font-semibold">
-                              <span>{sit.periode}</span>
+                              <span>{sit.periode}{(sit as any).numero ? <span className="text-slate-400 font-mono font-normal text-[10px] ml-1.5">{(sit as any).numero}</span> : ''}</span>
                               <span className="text-indigo-700 font-mono">{fmt(sit.montant_facture)} TTC</span>
                             </div>
                             <div className="text-[10.5px] text-slate-400 mt-0.5 font-mono">
@@ -1084,10 +1094,15 @@ export const BtpChantiersView = () => {
               sousTraitanceId={st.id}
               entreprise={st.entreprise}
               onEvaluate={(notes: Record<string, number>, commentaire: string) => {
-                solderBtpSousTraitance(st.id);
-                const values = Object.values(notes) as number[];
-                const noteGlobale = values.reduce((s: number, n: number) => s + n, 0) / values.length;
-                pushToast(`« ${st.entreprise} » évalué à ${noteGlobale.toFixed(1)}/5 et contrat soldé.`, 'SUCCESS');
+                // B-6 : note PONDÉRÉE (30/25/20/15/10 %) — et non plus une
+                // moyenne simple — persistée avec le commentaire, + dépense Core.
+                const POIDS: Record<string, number> = { qualite: 30, delais: 25, securite: 20, communication: 15, prix: 10 };
+                const noteGlobale = Object.entries(POIDS).reduce((s, [k, p]) => s + ((notes[k] || 0) * p / 100), 0);
+                solderBtpSousTraitance(st.id, {
+                  note_globale: Math.round(noteGlobale * 10) / 10,
+                  commentaire,
+                });
+                pushToast(`« ${st.entreprise} » évalué à ${noteGlobale.toFixed(1)}/5 (pondéré) — contrat soldé, dépense transmise à la comptabilité.`, 'SUCCESS');
                 setStEvalId(null);
               }}
             />

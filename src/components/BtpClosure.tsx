@@ -127,7 +127,9 @@ export const BtpClosureChecklist: React.FC<{
       check: (c) => c.stat !== null && c.stat !== undefined,
       detail: (c) => {
         if (!c.stat) return 'Stats indisponibles';
-        const couts = (c.stat.budget_engage || 0) + (c.stat.cout_mo_reel || 0) + (c.stat.cout_engins || 0) + (c.stat.cout_sous_traitance || 0);
+        // B-5 : formule UNIFIÉE — matériaux = max(budget_engage, cout_stock_sorti)
+        const coutsMatieres = Math.max(c.stat.budget_engage || 0, c.stat.cout_stock_sorti || 0);
+        const couts = coutsMatieres + (c.stat.cout_mo_reel || 0) + (c.stat.cout_engins || 0) + (c.stat.cout_sous_traitance || 0);
         const marge = (c.chantier.budget_initial || 0) - couts;
         const pct = c.chantier.budget_initial > 0 ? Math.round((marge / c.chantier.budget_initial) * 100) : 0;
         return `Marge: ${fmt(marge)} GNF (${pct}%)`;
@@ -138,13 +140,17 @@ export const BtpClosureChecklist: React.FC<{
   const allChecked = CHECKLIST.every(item => item.check(ctx) || exceptions.has(item.id));
   const canClose = currentRole === 'GERANT' || currentRole === 'COMPTABLE';
 
+  // Motifs d'exception tracés (B-moyen : le texte promettait un motif, aucun n'était saisi)
+  const [exceptionMotifs, setExceptionMotifs] = useState<Record<string, string>>({});
   const handleToggleException = (id: string) => {
-    setExceptions(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    if (exceptions.has(id)) {
+      setExceptions(prev => { const n = new Set(prev); n.delete(id); return n; });
+      return;
+    }
+    const motif = window.prompt(`Motif de l'exception pour « ${CHECKLIST.find(i => i.id === id)?.label} » (obligatoire, tracé à la clôture) :`);
+    if (!motif || !motif.trim()) return;
+    setExceptionMotifs(prev => ({ ...prev, [id]: motif.trim() }));
+    setExceptions(prev => { const n = new Set(prev); n.add(id); return n; });
   };
 
   const handleClosure = async () => {
@@ -152,8 +158,9 @@ export const BtpClosureChecklist: React.FC<{
       pushToast('Impossible de clôturer : conditions non remplies sans exception validée.', 'ERROR');
       return;
     }
-    // Calculer la marge finale pour l'historique
-    const couts = (stat?.budget_engage || 0) + (stat?.cout_mo_reel || 0) + (stat?.cout_engins || 0) + (stat?.cout_sous_traitance || 0);
+    // Calculer la marge finale pour l'historique (B-5 : formule unifiée)
+    const coutsMatieres = Math.max(stat?.budget_engage || 0, stat?.cout_stock_sorti || 0);
+    const couts = coutsMatieres + (stat?.cout_mo_reel || 0) + (stat?.cout_engins || 0) + (stat?.cout_sous_traitance || 0);
     const margeFinale = (chantier.budget_initial || 0) - couts;
 
     await updateBtpChantier(chantierId, {
@@ -165,6 +172,7 @@ export const BtpClosureChecklist: React.FC<{
         label: item.label,
         passed: item.check(ctx),
         exception: exceptions.has(item.id),
+        ...(exceptions.has(item.id) ? { exception_motif: exceptionMotifs[item.id] || '' } : {}),
       })),
     });
 

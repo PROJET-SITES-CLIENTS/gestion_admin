@@ -172,7 +172,7 @@ const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any; userField?:
   btpMouvements: { roles: ['GERANT','RESP_MATERIEL','MAGASINIER_BTP','CHEF_CHANTIER','DEVELOPPEUR'] },
   btpDocuments: { roles: ['GERANT','COMMERCIAL','ETUDES','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','ASSISTANTE','DEVELOPPEUR'] },
   btpAvenants: { roles: ['GERANT','COND_TRAVAUX','ETUDES','COMPTABLE','DEVELOPPEUR'], defaults: { statut: 'brouillon' } },
-  btpOs: { roles: ['GERANT','COND_TRAVAUX','DEVELOPPEUR'] },
+  btpOs: { roles: ['GERANT','COND_TRAVAUX','QHSE_BTP','DEVELOPPEUR'] }, // B-3 : le QHSE doit pouvoir émettre l'OS d'arrêt quand il suspend un chantier
   btpSousTraitances: { roles: ['GERANT','COND_TRAVAUX','COMPTABLE','DEVELOPPEUR'], defaults: { statut: 'en_cours' } },
   btpFournisseurs: { roles: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','MAGASINIER_BTP','COMPTABLE','DEVELOPPEUR'] },
   btpCautionnements: { roles: ['GERANT','COMPTABLE','DEVELOPPEUR'], defaults: { statut: 'active' } },
@@ -364,8 +364,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       response.tasks = (allData.tasks || []).filter((t: any) => t.receiverRole === role || t.receiverRole === 'ALL' || t.senderId === userId);
       response.notifications = (allData.notifications || []).filter((n: any) => n.targetRole === role || n.targetRole === 'ALL');
 
-      const btpTables = ['btpOffres','btpChantiers','btpEngins','btpIncidents','btpJournaux','btpSituations','btpAffectations','btpPointages','btpArticles','btpBonCommandes','btpMouvements','btpDocuments','btpAvenants','btpOs','btpSousTraitances','btpFournisseurs','btpCautionnements','btpInspections','btpPrixUnitaires','btpHeuresEngins','btpReserves','btpHabilitations','btpMarches','btpLots','btpTaches'];
-      for (const t of btpTables) response[t] = allData[t] || [];
+      // ══════════════════════════════════════════════════════════
+      // B-16 : les tables BTP ne partent qu'aux rôles concernés ET
+      // uniquement si le module BTP est actif — budgets, marges et
+      // taux journaliers ne fuient plus vers tous les comptes.
+      // ══════════════════════════════════════════════════════════
+      const configMain = allData.config?.[0] || {};
+      const btpActive = ((configMain as any).activeModules || []).includes('BTP');
+      const BTP_TABLE_ROLES: Record<string, string[]> = {
+        btpOffres: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','COND_TRAVAUX','DEVELOPPEUR'],
+        btpMarches: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','ASSISTANTE','COND_TRAVAUX','DEVELOPPEUR'],
+        btpChantiers: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','ETUDES','COMPTABLE','RH','DEVELOPPEUR'],
+        btpEngins: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'],
+        btpIncidents: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','DEVELOPPEUR'],
+        btpJournaux: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'],
+        btpSituations: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','COMPTABLE','DEVELOPPEUR'],
+        btpAffectations: ['GERANT','RH','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'],
+        btpPointages: ['GERANT','RH','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'],
+        btpArticles: ['GERANT','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'],
+        btpBonCommandes: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'],
+        btpMouvements: ['GERANT','RESP_MATERIEL','MAGASINIER_BTP','CHEF_CHANTIER','DEVELOPPEUR'],
+        btpDocuments: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','ETUDES','COMPTABLE','RH','ASSISTANTE','DEVELOPPEUR'],
+        btpAvenants: ['GERANT','COND_TRAVAUX','ETUDES','COMPTABLE','DEVELOPPEUR'],
+        btpOs: ['GERANT','COND_TRAVAUX','QHSE_BTP','DEVELOPPEUR'],
+        btpSousTraitances: ['GERANT','COND_TRAVAUX','COMPTABLE','DEVELOPPEUR'],
+        btpFournisseurs: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','MAGASINIER_BTP','COMPTABLE','DEVELOPPEUR'],
+        btpCautionnements: ['GERANT','COMPTABLE','DEVELOPPEUR'],
+        btpInspections: ['GERANT','QHSE_BTP','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'],
+        btpPrixUnitaires: ['GERANT','ETUDES','COMPTABLE','DEVELOPPEUR'],
+        btpHeuresEngins: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','DEVELOPPEUR'],
+        btpReserves: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','COMPTABLE','DEVELOPPEUR'],
+        btpHabilitations: ['GERANT','QHSE_BTP','RH','COND_TRAVAUX','CHEF_CHANTIER','DEVELOPPEUR'],
+        btpLots: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','ETUDES','DEVELOPPEUR'],
+        btpTaches: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','ETUDES','DEVELOPPEUR'],
+      };
+      const btpRoleSeesChantiers = btpActive && BTP_TABLE_ROLES.btpChantiers.includes(role);
+      if (btpActive) {
+        for (const [t, allowed] of Object.entries(BTP_TABLE_ROLES)) {
+          if (allowed.includes(role)) response[t] = allData[t] || [];
+        }
+        // Annuaire chantiers : suit les affectations (RH paie/validations) + QHSE (habilitations)
+        if (BTP_TABLE_ROLES.btpAffectations.includes(role) || role === 'QHSE_BTP') {
+          response.btpEmployeeDirectory = (allData.employees || []).map((e: any) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, position: e.position }));
+        }
+      }
       const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
       for (const t of agroTables) response[t] = allData[t] || [];
 
@@ -376,10 +418,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!['GERANT', 'ASSISTANTE', 'DEVELOPPEUR'].includes(role)) {
         response.assistantDocuments = (response.assistantDocuments || []).filter((d: any) => !d.isConfidential);
       }
-      response.btpEmployeeDirectory = (allData.employees || []).map((e: any) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, position: e.position }));
 
       // btpChantierStats — agrégats P&L calculés côté serveur
-      {
+      // (B-16 : réservés aux rôles qui voient les chantiers)
+      if (btpRoleSeesChantiers) {
         const [chantiers, situations, pointages, affectations, mouvements, heuresEngins, engins, sousTraitances, expenses] = await Promise.all([
           db.getTable('btpChantiers'), db.getTable('btpSituations'),
           db.getTable('btpPointages'), db.getTable('btpAffectations'),
@@ -399,7 +441,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             cout_engins: 0, cout_stock_sorti: 0, cout_sous_traitance: 0, retenue_bloquee: 0,
           };
           for (const e of expenses) {
-            if ((e.chantier_id || '') !== c.id || e.status === 'REJECTED') continue;
+            // B-9 : les dépenses REJETÉES et ANNULÉES sont exclues du budget engagé
+            if ((e.chantier_id || '') !== c.id || ['REJECTED', 'CANCELLED'].includes(e.status)) continue;
             s.budget_engage += Number(e.amountTTC) || Number(e.amount) || 0;
           }
           for (const sit of situations) {
@@ -499,7 +542,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (route === 'notifications' && method === 'POST' && !param1) {
       const user = requireAuth(req, res); if (!user) return;
-      const notif = { id: genId(), targetRole: body.targetRole, message: sanitize(body.message, 1000), type: body.type || 'INFO', isRead: false, createdAt: new Date().toISOString() };
+      // B-8 : déduplication par clé — les notifications automatiques ne peuvent
+      // plus être dupliquées, même lorsque plusieurs rôles sont connectés et
+      // ne voient pas mutuellement leurs notifications existantes.
+      if (body.dedupKey) {
+        const allNotifs = await db.getTable('notifications');
+        const dup = allNotifs.find((n: any) => n.dedupKey === body.dedupKey);
+        if (dup) return res.json(dup);
+      }
+      const notif = { id: genId(), targetRole: body.targetRole, message: sanitize(body.message, 1000), type: body.type || 'INFO', dedupKey: body.dedupKey || undefined, isRead: false, createdAt: new Date().toISOString() };
       await db.insert('notifications', notif);
       return res.status(201).json(notif);
     }
@@ -719,13 +770,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const schema = CRUD_TABLES[param1];
       if (!schema) return res.status(404).json({ error: 'Table inconnue.' });
       const user = requireRole(req, res, ...schema.roles); if (!user) return;
+
+      // ══════════════════════════════════════════════════════════
+      // B-7 : la matrice de permissions BTP est appliquée CÔTÉ SERVEUR —
+      // décocher une permission chez le Gérant prend effet réellement.
+      // ══════════════════════════════════════════════════════════
+      const CREATE_PERM_ACTIONS: Record<string, string> = {
+        btpOffres: 'creer_affaire',
+        btpChantiers: 'creer_chantier',
+        btpAffectations: 'affecter_salairie',
+        btpBonCommandes: 'creer_commande',
+        btpJournaux: 'saisir_rapport',
+      };
+      const createPerm = CREATE_PERM_ACTIONS[param1];
+      if (createPerm) {
+        const cfg = await db.getItem('config', 'main') || {} as any;
+        const perm = (cfg as any).btpPermissions?.[user.role]?.[createPerm];
+        if (perm === false) {
+          return res.status(403).json({ error: `Permission refusée par la matrice BTP : « ${createPerm} ».` });
+        }
+      }
+
+      // B-10 : gardes pointage à la CRÉATION (elles n'existaient qu'à l'update)
+      if (param1 === 'btpPointages') {
+        const h = Number((body as any).heures);
+        if (isNaN(h) || h < 0 || h > 12) {
+          return res.status(400).json({ error: 'Heures invalides : entre 0 et 12 heures.' });
+        }
+        if ((body as any).chantier_id) {
+          const ch = await db.getItem('btpChantiers', (body as any).chantier_id);
+          if (ch && !['en_cours', 'planification'].includes(ch.statut)) {
+            return res.status(400).json({ error: `Pointage impossible sur un chantier « ${ch.statut} ».` });
+          }
+        }
+      }
+
+      // B-11 : stock non négatif à la CRÉATION du mouvement
+      if (param1 === 'btpMouvements') {
+        const qte = Number((body as any).quantite);
+        if (isNaN(qte) || qte <= 0) {
+          return res.status(400).json({ error: 'Quantité doit être positive.' });
+        }
+        const articleId = String((body as any).article_id || '');
+        const mvtType = String((body as any).type || '');
+        const chantierIdMvt = String((body as any).chantier_id || '');
+        const allMvts = await db.getTable('btpMouvements');
+        const forArticle = allMvts.filter((m: any) => m.article_id === articleId);
+        const stockDepot = forArticle.reduce((s: number, m: any) =>
+          s + (m.type === 'entree' ? Number(m.quantite) || 0 : m.type === 'sortie_chantier' ? -(Number(m.quantite) || 0) : 0), 0);
+        const stockChantier = forArticle
+          .filter((m: any) => m.chantier_id === chantierIdMvt)
+          .reduce((s: number, m: any) =>
+            s + (m.type === 'sortie_chantier' ? Number(m.quantite) || 0 : m.type === 'retour' ? -(Number(m.quantite) || 0) : 0), 0);
+        if (mvtType === 'sortie_chantier' && qte > stockDepot) {
+          return res.status(400).json({ error: `Stock dépôt insuffisant : ${stockDepot} disponible(s), ${qte} demandé(s).` });
+        }
+        if (mvtType === 'retour' && qte > stockChantier) {
+          return res.status(400).json({ error: `Stock chantier insuffisant : ${stockChantier} sur chantier, ${qte} retourné(s).` });
+        }
+      }
+
       const id = genId();
       const item = { id, ...(schema.defaults || {}), ...sanitize(body), created_by: user.id, createdAt: new Date().toISOString(), updated_at: new Date().toISOString() };
       // Tables à workflow STRICT : le statut initial est TOUJOURS forcé par le
       // serveur, quoi que dise le client (anti-contournement des transitions).
       // Ex: impossible de créer un BC directement en 'reçu', une offre en 'gagnée',
       // un avenant en 'validé' (sans passer par l'endpoint atomique de validation).
-      const STRICT_STATUS_TABLES = ['btpOffres', 'btpChantiers', 'btpBonCommandes', 'btpAvenants', 'btpSituations'];
+      // B-17 : btpMarches ajouté — impossible de créer un marché déjà 'signe'.
+      const STRICT_STATUS_TABLES = ['btpOffres', 'btpChantiers', 'btpBonCommandes', 'btpAvenants', 'btpSituations', 'btpMarches'];
       if (schema.defaults?.statut !== undefined && STRICT_STATUS_TABLES.includes(param1)) {
         item.statut = schema.defaults.statut;
       }
@@ -737,6 +849,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!schema) return res.status(404).json({ error: 'Table inconnue.' });
       const user = requireRole(req, res, ...schema.roles); if (!user) return;
       let updates = { ...sanitize(body), updated_at: new Date().toISOString() };
+
+      // B-7 (suite) : matrice de permissions BTP appliquée aux mises à jour clés
+      const UPDATE_PERM_CHECKS: Array<[boolean, string]> = [
+        [param1 === 'btpChantiers' && updates.statut === 'clôturé', 'cloturer_chantier'],
+        [param1 === 'btpSituations' && updates.statut === 'en_attente_facturation', 'valider_situation'],
+        [param1 === 'btpChantiers' && updates.budget_initial !== undefined, 'modifier_budget'],
+      ];
+      const permHit = UPDATE_PERM_CHECKS.find(([cond]) => cond);
+      if (permHit) {
+        const cfg = await db.getItem('config', 'main') || {} as any;
+        const perm = (cfg as any).btpPermissions?.[user.role]?.[permHit[1]];
+        if (perm === false) {
+          return res.status(403).json({ error: `Permission refusée par la matrice BTP : « ${permHit[1]} ».` });
+        }
+      }
 
       // ══════════════════════════════════════════════════════════
       // P2-1 : GARBES SERVEUR BTP (jusqu'ici côté client uniquement)
@@ -786,6 +913,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Chantiers : validation RH/Matériel protégée par endpoint dédié
       if (param1 === 'btpChantiers') {
+        const existingCh = await db.getItem('btpChantiers', param2);
         if (updates.rh_validation === true && !['GERANT', 'RH'].includes(user.role)) {
           delete updates.rh_validation;
         }
@@ -796,11 +924,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (updates.budget_initial !== undefined && Number(updates.budget_initial) < 0) {
           return res.status(400).json({ error: 'Budget négatif interdit.' });
         }
+        // B-18 : le taux de RG ne se modifie que par le Gérant (trace avenant requise)
+        if (updates.retenue_garantie_pct !== undefined && existingCh && updates.retenue_garantie_pct !== existingCh.retenue_garantie_pct && user.role !== 'GERANT') {
+          return res.status(403).json({ error: 'Le taux de retenue de garantie ne peut être modifié que par le Gérant (via avenant).' });
+        }
+        // B-2 : démarrage — la double validation RH + Matériel est désormais
+        // exigée CÔTÉ SERVEUR (avant : contournable par appel API direct).
+        if (updates.statut === 'en_cours' && existingCh) {
+          if (existingCh.statut === 'planification' && !(existingCh.rh_validation && existingCh.materiel_validation)) {
+            return res.status(400).json({ error: 'Démarrage impossible : validations RH et Matériel requises.' });
+          }
+          if (existingCh.statut === 'suspendu' && !(existingCh.qhse_unlock && existingCh.dg_unlock)) {
+            return res.status(400).json({ error: 'Reprise impossible : double validation QHSE + Direction requise.' });
+          }
+        }
+        // B-12 : pas de réception définitive avec des réserves ouvertes
+        // (le PV définitif atteste que toutes les réserves sont levées).
+        if (updates.statut === 'réception_définitive') {
+          const reserves = await db.getTable('btpReserves');
+          const openReserves = reserves.filter((r: any) =>
+            r.chantier_id === param2 && !['levée', 'levee', 'annulée', 'annulee'].includes(r.statut));
+          if (openReserves.length > 0) {
+            return res.status(400).json({ error: `Réception définitive impossible : ${openReserves.length} réserve(s) non levée(s).` });
+          }
+        }
       }
 
       // Marchés : montant non négatif
       if (param1 === 'btpMarches' && updates.montant_ht !== undefined && Number(updates.montant_ht) < 0) {
         return res.status(400).json({ error: 'Montant HT négatif interdit.' });
+      }
+      // B-17 : la signature d'un marché est réservée au GÉRANT, côté serveur
+      // (avant : n'importe quel rôle de la table pouvait poster statut:'signe').
+      if (param1 === 'btpMarches' && updates.statut === 'signe' && user.role !== 'GERANT') {
+        return res.status(403).json({ error: 'Seul le Gérant peut signer un marché.' });
+      }
+
+      // B-11 : stock non négatif — la garde est désormais côté SERVEUR
+      // (sortie ≤ stock dépôt ; retour ≤ stock chantier).
+      if (param1 === 'btpMouvements' && (updates.quantite !== undefined || updates.type !== undefined)) {
+        const qte = Number(updates.quantite);
+        if (isNaN(qte) || qte <= 0) {
+          return res.status(400).json({ error: 'Quantité doit être positive.' });
+        }
+        const articleId = (updates.article_id || '') as string;
+        const mvtType = (updates.type || '') as string;
+        const chantierIdMvt = (updates.chantier_id || '') as string;
+        const allMvts = await db.getTable('btpMouvements');
+        const forArticle = allMvts.filter((m: any) => m.article_id === articleId);
+        const stockDepot = forArticle.reduce((s: number, m: any) =>
+          s + (m.type === 'entree' ? Number(m.quantite) || 0 : m.type === 'sortie_chantier' ? -(Number(m.quantite) || 0) : 0), 0);
+        const stockChantier = forArticle
+          .filter((m: any) => m.chantier_id === chantierIdMvt)
+          .reduce((s: number, m: any) =>
+            s + (m.type === 'sortie_chantier' ? Number(m.quantite) || 0 : m.type === 'retour' ? -(Number(m.quantite) || 0) : 0), 0);
+        if (mvtType === 'sortie_chantier' && qte > stockDepot) {
+          return res.status(400).json({ error: `Stock dépôt insuffisant : ${stockDepot} disponible(s), ${qte} demandé(s).` });
+        }
+        if (mvtType === 'retour' && qte > stockChantier) {
+          return res.status(400).json({ error: `Stock chantier insuffisant : ${stockChantier} sur chantier, ${qte} retourné(s).` });
+        }
       }
 
       // Lots : budget non négatif, avancement 0-100
@@ -873,6 +1056,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           'resilie': ['cloture'],
           'cloture': [],
         },
+        // ════════════════════════════════════════════════════════
+        // B-2 : les tables workflows critiques sont désormais sous
+        // machine à états serveur (elles ne l'étaient qu'en UI).
+        // ════════════════════════════════════════════════════════
+        btpChantiers: {
+          'planification': ['en_cours', 'clôturé'],
+          'en_cours': ['suspendu', 'réception_provisoire', 'clôturé'],
+          'suspendu': ['en_cours', 'réception_provisoire', 'clôturé'],
+          'réception_provisoire': ['en_cours', 'réception_définitive', 'clôturé'],
+          'réception_définitive': ['clôturé'],
+          'clôturé': [],
+        },
+        btpOffres: {
+          'repérée': ['en_chiffrage'],
+          'en_chiffrage': ['en_validation_financiere'],
+          'en_validation_financiere': ['en_validation_dg', 'en_chiffrage'],
+          'en_validation_dg': ['déposée'],
+          'déposée': ['gagnée', 'perdue'],
+          'gagnée': [], 'perdue': [], 'retirée': [],
+        },
+        btpBonCommandes: {
+          'brouillon': ['soumis'],
+          'soumis': ['reçu', 'brouillon'],
+          'reçu': [],
+        },
+        btpAvenants: {
+          'brouillon': ['validé', 'rejeté'],
+          'validé': [], 'rejeté': [],
+        },
       };
 
       if (updates.statut !== undefined && VALID_TRANSITIONS[param1]) {
@@ -944,13 +1156,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tx = {
         id: genId(), accountId, toAccountId: null, type: 'CREDIT', amount: net,
         date: new Date().toISOString(), referenceId: sitId, category: 'SITUATION_TRAVAUX',
-        description: `Situation ${sit.periode} — Chantier: ${chantierNom}${tva > 0 ? ` (HT ${ht} + TVA ${tva})` : ''}${retenue > 0 ? ` — RG ${retenue}` : ''}`,
+        description: `Situation ${sit.numero || sit.periode} — Chantier: ${chantierNom}${tva > 0 ? ` (HT ${ht} + TVA ${tva})` : ''}${retenue > 0 ? ` — RG ${retenue}` : ''}`,
         isReconciled: false,
       };
       await db.insert('transactions', tx);
 
       // 3. Crédit du solde
       await db.update('treasury_accounts', accountId, { balance: (account.balance || 0) + net });
+
+      // ══════════════════════════════════════════════════════════
+      // 3bis. B-1 : ÉCRITURE SYSCOHADA EXACTE, générée côté serveur —
+      //   Débit 52x (trésorerie) = NET encaissé
+      //   Débit 411 (créances clients) = RG bloquée chez le maître d'ouvrage
+      //   Crédit 70x (ventes) = HT RÉEL de la situation
+      //   Crédit 443 (TVA collectée) = TVA RÉELLE (0 en autoliquidation)
+      // Avant : écriture basée sur le net avec TVA rétrocalculée fausse.
+      // ══════════════════════════════════════════════════════════
+      let accountingEntry: any = null;
+      let accountingWarning: string | undefined;
+      {
+        const [accounts, journals] = await Promise.all([db.getTable('accountingAccounts'), db.getTable('accountingJournals')]);
+        const findAcc = (prefixes: string[]) => {
+          for (const pfx of prefixes) {
+            const acc = accounts.find((a: any) => a.accountNumber && a.accountNumber.startsWith(pfx));
+            if (acc) return acc;
+          }
+          return null;
+        };
+        const compteTreso = findAcc(['52', '57']);
+        const compteVente = findAcc(['70']);
+        const compteTVA = findAcc(['443']);
+        const compteClient = findAcc(['411']);
+        const journal = journals.find((j: any) => j.code === 'VT') || journals[0];
+        const required: string[] = [];
+        if (!compteTreso) required.push('52x trésorerie');
+        if (!compteVente) required.push('70x ventes');
+        if (retenue > 0 && !compteClient) required.push('411 clients');
+        if (tva > 0 && !compteTVA) required.push('443 TVA collectée');
+        if (!journal) required.push('journal VT');
+        if (required.length === 0) {
+          const libelle = `Situation BTP ${sit.numero || sit.periode} — ${chantierNom}`;
+          const lines: any[] = [
+            { accountId: compteTreso.id, debit: net, credit: 0, label: libelle },
+            ...(retenue > 0 ? [{ accountId: compteClient.id, debit: retenue, credit: 0, label: `RG bloquée — ${libelle}` }] : []),
+            { accountId: compteVente.id, debit: 0, credit: ht, label: 'HT - ' + libelle },
+            ...(tva > 0 ? [{ accountId: compteTVA.id, debit: 0, credit: tva, label: 'TVA - ' + libelle }] : []),
+          ];
+          accountingEntry = {
+            id: genId(), journalId: journal.id, date: new Date().toISOString(),
+            reference: 'AUTO-SIT', description: libelle, status: 'VALIDATED',
+            validatedAt: new Date().toISOString(),
+            lines: lines.filter((l: any) => l.debit > 0 || l.credit > 0),
+            createdAt: new Date().toISOString(),
+          };
+          await db.insert('accountingEntries', accountingEntry);
+        } else {
+          accountingWarning = `Écriture non générée : plan comptable incomplet (${required.join(', ')}).`;
+        }
+      }
 
       // 4. Notification
       await db.insert('notifications', {
@@ -960,7 +1223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       const updatedSit = await db.getItem('btpSituations', sitId);
-      return res.status(201).json({ success: true, situation: updatedSit, transaction: tx, chantier_nom: chantierNom, retenue, net });
+      return res.status(201).json({ success: true, situation: updatedSit, transaction: tx, accountingEntry, accountingWarning, chantier_nom: chantierNom, retenue, net });
     }
 
     // --- Valider un avenant → applique budget ± montant + délai + jours ---
@@ -1005,6 +1268,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       await db.update('btpChantiers', chantier.id, chantierUpdates);
       await db.update('btpAvenants', avId, { statut: 'validé' });
+
+      // ══════════════════════════════════════════════════════════
+      // B-13 : le MARCHÉ d'origine suit l'avenant — le montant
+      // contractuel (HT/TTC) et la date de fin ne restaient plus
+      // figés pendant que le chantier était révisé.
+      // ══════════════════════════════════════════════════════════
+      if (chantier.marche_id) {
+        const marche = await db.getItem('btpMarches', chantier.marche_id);
+        if (marche && marche.statut !== 'cloture') {
+          const marcheUpdates: any = {};
+          if (chantierUpdates.budget_initial !== undefined) {
+            // Le budget chantier est TTC ; le marché est tenu en HT.
+            const deltaTTC = chantierUpdates.budget_initial - (chantier.budget_initial || 0);
+            const tvaRateM = (Number(marche.tva_rate) || 18) / 100;
+            const deltaHT = Math.round(deltaTTC / (1 + tvaRateM));
+            marcheUpdates.montant_ht = Math.max(0, (Number(marche.montant_ht) || 0) + deltaHT);
+            marcheUpdates.montant_ttc = Math.round(marcheUpdates.montant_ht * (1 + tvaRateM));
+          }
+          if (chantierUpdates.date_fin_prevue !== undefined) {
+            marcheUpdates.date_fin_prevue = chantierUpdates.date_fin_prevue;
+          }
+          if (Object.keys(marcheUpdates).length > 0) {
+            await db.update('btpMarches', marche.id, marcheUpdates);
+          }
+        }
+      }
 
       await db.insert('notifications', {
         id: genId(), targetRole: 'COND_TRAVAUX',
@@ -1054,13 +1343,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db.insert('transactions', tx);
       await db.update('treasury_accounts', accountId, { balance: (account.balance || 0) + total });
 
+      // B-1 (suite) : écriture de libération de la RG — la créance client
+      // (411) est soldée par l'encaissement trésorerie (52x).
+      let accountingEntry: any = null;
+      let accountingWarning: string | undefined;
+      {
+        const [accounts, journals] = await Promise.all([db.getTable('accountingAccounts'), db.getTable('accountingJournals')]);
+        const findAcc = (prefixes: string[]) => {
+          for (const pfx of prefixes) {
+            const acc = accounts.find((a: any) => a.accountNumber && a.accountNumber.startsWith(pfx));
+            if (acc) return acc;
+          }
+          return null;
+        };
+        const compteTreso = findAcc(['52', '57']);
+        const compteClient = findAcc(['411']);
+        const journal = journals.find((j: any) => j.code === 'VT') || journals[0];
+        if (compteTreso && compteClient && journal) {
+          const libelle = `Libération RG — ${chantier.nom}`;
+          accountingEntry = {
+            id: genId(), journalId: journal.id, date: new Date().toISOString(),
+            reference: 'AUTO-RG', description: libelle, status: 'VALIDATED',
+            validatedAt: new Date().toISOString(),
+            lines: [
+              { accountId: compteTreso.id, debit: total, credit: 0, label: libelle },
+              { accountId: compteClient.id, debit: 0, credit: total, label: libelle },
+            ],
+            createdAt: new Date().toISOString(),
+          };
+          await db.insert('accountingEntries', accountingEntry);
+        } else {
+          accountingWarning = 'Écriture de libération non générée : plan comptable incomplet (52x, 411 ou journal VT).';
+        }
+      }
+
       await db.insert('notifications', {
         id: genId(), targetRole: 'GERANT',
         message: `Retenues libérées: ${total.toLocaleString('fr-FR')} GNF encaissés sur « ${chantier.nom} ».`,
         type: 'SUCCESS', isRead: false, createdAt: new Date().toISOString(),
       });
 
-      return res.status(201).json({ success: true, transaction: tx, total_libere: total, situations: count });
+      return res.status(201).json({ success: true, transaction: tx, accountingEntry, accountingWarning, total_libere: total, situations: count });
     }
 
     // --- Réceptionner un bon de commande → stock + dépense ---
@@ -1155,7 +1478,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
 
         for (const e of expenses) {
-          if ((e.chantier_id || '') !== c.id || e.status === 'REJECTED') continue;
+          if ((e.chantier_id || '') !== c.id || ['REJECTED', 'CANCELLED'].includes(e.status)) continue;
           s.budget_engage += Number(e.amountTTC) || Number(e.amount) || 0;
         }
         for (const sit of situations) {
