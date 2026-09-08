@@ -15,7 +15,7 @@ import { generateReceiptPDF } from '../../utils/pdfGenerator';
 export function AccountantReceivables() {
   const {
     projects, treasuryAccounts, addTransaction, pushToast,
-    addNotification, companyConfig, updateProject, autoGenerateAccountingEntry,
+    addNotification, companyConfig, updateProject, autoGenerateAccountingEntry, getNextDocNumber,
     // SYNERGIE D : inclure les chantiers BTP dans les créances
     btpChantiers, btpChantierStats, btpSituations, btpReserves,
   } = useApp();
@@ -119,16 +119,34 @@ export function AccountantReceivables() {
 
     if (ok) {
       // ══════════════════════════════════════════════════════════
-      // T9 : l'acompte est désormais un VRAI encaissement synchronisé —
-      // 1. il est inscrit dans l'échéancier (tranche PAID) donc la
-      //    créance affichée baisse réellement,
-      // 2. il génère l'écriture comptable VENTE (701/443) avec TVA,
-      // 3. il met à jour les statuts de paiement du projet.
+      // T9 + M7/M8 : l'acompte est un VRAI encaissement synchronisé —
+      // 1. inscrit dans l'échéancier (tranche PAID) ET AMORTI sur les
+      //    tranches en attente (l'échéancier reste équilibré : Σ = budget,
+      //    le paiement du solde n'est plus refusé en « TROP-PERÇU »),
+      // 2. reçu PERSISTÉ dans project.documents avec numéro REC- légal,
+      // 3. écriture comptable VENTE (701/443) avec TVA,
+      // 4. statuts de paiement du projet mis à jour.
       // ══════════════════════════════════════════════════════════
       const today = new Date().toISOString().slice(0, 10);
       const proj = projects.find(p => p.id === selectedProject.id);
       if (!proj) return;
       const currentPlan = proj.paymentPlan || { status: 'DRAFT', installments: [] } as any;
+
+      // M7 : amortissement — l'acompte réduit les tranches PENDING dans l'ordre
+      let rest = amount;
+      const adjusted = (currentPlan.installments || []).map((inst: any) => {
+        if (inst.status === 'PENDING' && rest > 0) {
+          const take = Math.min(inst.amount || 0, rest);
+          rest -= take;
+          const newAmount = (inst.amount || 0) - take;
+          return newAmount <= 0
+            ? { ...inst, amount: 0, status: 'PAID' as const, paymentDate: new Date().toISOString() }
+            : { ...inst, amount: newAmount };
+        }
+        return inst;
+      });
+
+      const docNumber = await getNextDocNumber('REC');
       const newInstallment = {
         id: `acompte-${Date.now()}`,
         name: paymentRef ? `Acompte (${paymentRef})` : 'Acompte',
@@ -137,46 +155,59 @@ export function AccountantReceivables() {
         expectedDate: today,
         status: 'PAID',
         paymentDate: new Date().toISOString(),
+        receiptNumber: docNumber,
       };
-      const installments = [...(currentPlan.installments || []), newInstallment];
+      const installments = [...adjusted, newInstallment];
       const totalPaidNow = selectedProject.paidFromPlan + amount;
       const fullyPaid = totalPaidNow >= (proj.budget || 0) - 0.5;
+
+      // M8 : le reçu est persisté (re-téléchargeable depuis Ventes)
+      const newDoc: any = {
+        id: newInstallment.id,
+        docNumber,
+        type: 'RECEIPT',
+        createdAt: new Date().toISOString(),
+        installmentId: newInstallment.id,
+        installmentName: 'Acompte',
+        amountPaid: amount,
+        balance: Math.max(0, selectedProject.remaining - amount),
+        paymentMethod: 'VIREMENT',
+        paymentRef: paymentRef || '',
+      };
+
       await updateProject({
         ...proj,
         paymentPlan: { ...currentPlan, installments },
+        documents: [...(proj.documents || []), newDoc],
         paymentStatus: fullyPaid ? 'PAID' : 'PARTIAL',
         status: fullyPaid ? 'PAYE' : 'EN_COURS',
         accountantPaymentConfirm: true,
       } as any);
 
-      // 2. Écriture comptable SYSCOHADA (701 HT / 443 TVA / 52x TTC)
-      await autoGenerateAccountingEntry('VENTE', amount, `Acompte créance — ${selectedProject.name}`);
+      // 3. Écriture comptable SYSCOHADA (701 HT / 443 TVA / 52x TTC)
+      await autoGenerateAccountingEntry('VENTE', amount, `Acompte créance ${docNumber} — ${selectedProject.name}`);
 
-      // Générer le reçu PDF
-      const doc = {
-        id: newInstallment.id,
-        amountPaid: amount,
-        createdAt: new Date().toISOString(),
-        balance: selectedProject.remaining - amount,
-        installmentName: 'Acompte',
-      };
       try {
-        await generateReceiptPDF(selectedProject, doc, companyConfig);
+        await generateReceiptPDF(proj, newDoc, companyConfig);
       } catch { /* PDF non bloquant */ }
 
-      await addNotification('COMMERCIAL', `Acompte de ${fmt(amount)} GNF enregistré pour « ${selectedProject.name} ». Restant : ${fmt(selectedProject.remaining - amount)} GNF.`, 'SUCCESS');
-      pushToast(`Acompte de ${fmt(amount)} GNF enregistré (plan + écriture comptable mis à jour). Reçu téléchargé.`, 'SUCCESS');
+      await addNotification('COMMERCIAL', `Acompte de ${fmt(amount)} GNF enregistré pour « ${selectedProject.name} ». Restant : ${fmt(Math.max(0, selectedProject.remaining - amount))} GNF.`, 'SUCCESS');
+      pushToast(`Acompte de ${fmt(amount)} GNF enregistré (${docNumber}) — plan amorti, écriture générée, reçu téléchargé.`, 'SUCCESS');
       setShowPayment(null);
       setPaymentAmount('');
       setPaymentRef('');
     }
   };
 
-  const handleRelance = async (projectName: string, clientName: string, remaining: number) => {
+  const handleRelance = async (projectId: string, projectName: string, clientName: string, remaining: number) => {
+    // M13 : dédup — une seule relance manuelle par projet et par jour
+    // (avant : chaque clic renotifiait le commercial).
     await addNotification(
       'COMMERCIAL',
       `RELANCE : « ${clientName} » doit encore ${fmt(remaining)} GNF sur le projet « ${projectName} ». Merci de contacter le client pour le règlement.`,
-      'WARNING'
+      'WARNING',
+      projectId,
+      `relance-manuelle-${projectId}-${new Date().toISOString().slice(0, 10)}`
     );
     pushToast(`Relance envoyée au commercial pour « ${clientName} ».`, 'SUCCESS');
   };
@@ -271,7 +302,7 @@ export function AccountantReceivables() {
                           <Receipt size={11} /> Acompte
                         </button>
                         <button
-                          onClick={() => handleRelance(r.name, r.clientName, r.remaining)}
+                          onClick={() => handleRelance(r.id, r.name, r.clientName, r.remaining)}
                           className="btn btn-ghost !py-1 !px-2.5 !text-[10.5px]"
                           title="Envoyer une relance au commercial"
                         >

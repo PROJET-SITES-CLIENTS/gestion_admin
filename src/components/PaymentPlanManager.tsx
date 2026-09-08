@@ -120,7 +120,7 @@ export const PaymentPlanManager = ({ project }: { project: Project }) => {
   };
 
   const totalPercentage = draftPlan.installments.reduce((acc, inst) => acc + (inst.percentage || 0), 0);
-  const isValid = totalPercentage === 100;
+  const isValid = Math.abs(totalPercentage - 100) < 0.01; // Mineur V2 : tolérance flottante (3×33,33 % accepté)
 
   const handleSaveDraft = async () => {
     if (!isValid) return alert('Le total des pourcentages doit être exactement 100%');

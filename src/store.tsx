@@ -85,7 +85,7 @@ interface AppContextType {
   addTreasuryAccount: (acc: Omit<TreasuryAccount, 'id' | 'balance'>) => Promise<void>;
   addTransaction: (tx: Omit<Transaction, 'id' | 'date'>) => Promise<boolean>;
   postAccountingEntry: (entry: Omit<any, 'id' | 'createdAt' | 'createdBy' | 'status'>) => Promise<void>;
-  autoGenerateAccountingEntry: (type: 'VENTE' | 'ACHAT' | 'SALAIRE', amount: number, label: string, tvaOverride?: number) => Promise<void>;
+  autoGenerateAccountingEntry: (type: 'VENTE' | 'ACHAT' | 'SALAIRE' | 'EXTOURNE_VENTE', amount: number, label: string, tvaOverride?: number) => Promise<void>;
   validateAccountingEntry: (id: string) => Promise<void>;
   createAsset: (asset: Omit<any, 'id' | 'status'>) => Promise<void>;
   createAccountingAccount: (account: Omit<any, 'id'>) => Promise<void>;
@@ -94,7 +94,8 @@ interface AppContextType {
   notifications: any[];
   addTask: (receiverRole: Role, title: string, content: string, priority?: 'LOW'|'MEDIUM'|'HIGH', link?: string) => Promise<void>;
   updateTaskStatus: (taskId: string, status: 'TODO'|'IN_PROGRESS'|'DONE') => Promise<void>;
-  addNotification: (targetRole: Role, message: string, type: 'INFO'|'WARNING'|'SUCCESS'|'ERROR', link?: string) => Promise<void>;
+  addNotification: (targetRole: Role, message: string, type: 'INFO'|'WARNING'|'SUCCESS'|'ERROR', link?: string, dedupKey?: string) => Promise<void>;
+  getNextDocNumber: (prefix: 'PRO' | 'REC' | 'FAC' | 'MAR' | 'SIT') => Promise<string>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
 
   // BTP Module
@@ -395,8 +396,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return p.status || 'NOUVEAU';
   };
 
-  const addNotification = async (targetRole: Role | 'ALL', message: string, type: 'INFO'|'WARNING'|'SUCCESS'|'ERROR' = 'INFO', link?: string) => {
-    const newNotif = { targetRole, message, type, link, isRead: false };
+  const addNotification = async (targetRole: Role | 'ALL', message: string, type: 'INFO'|'WARNING'|'SUCCESS'|'ERROR' = 'INFO', link?: string, dedupKey?: string) => {
+    // M4 : la délégation d'absence s'applique aussi aux notifications
+    // (avant : uniquement aux tâches — les alertes vers un rôle absent
+    // tombaient dans le vide).
+    let finalTarget = targetRole;
+    let finalMessage = message;
+    if (targetRole !== 'ALL' && companyConfig?.delegations && companyConfig.delegations[targetRole as Role]) {
+      finalTarget = companyConfig.delegations[targetRole as Role] as Role;
+      finalMessage = `[Délégué depuis ${targetRole}] ${message}`;
+    }
+    const newNotif = { targetRole: finalTarget, message: finalMessage, type, link, dedupKey, isRead: false };
     try {
       const res = await apiFetch('/notifications', { method: 'POST', body: JSON.stringify(newNotif) });
       if (res.ok) {
@@ -597,10 +607,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // FIX 10 : RELANCE AUTOMATIQUE des échéances dépassées
-        // J+7 → notification COMMERCIAL (rappel)
-        // J+14 → tâche COMMERCIAL (relance urgente)
-        // J+30 → notification GERANT (escalade direction)
+        // ══════════════════════════════════════════════════════════
+        // FIX 10 (refonte C1) : RELANCE AUTOMATIQUE des échéances
+        // J+7..J+13 → notification COMMERCIAL · J+14..J+29 → tâche
+        // COMMERCIAL HIGH · J+30+ → notification GERANT.
+        // Déduplication par dedupKey SERVEUR (résiste aux sessions
+        // multi-rôles) et fenêtres en PLAGES (plus d'alerte perdue
+        // si personne ne s'est connecté le jour exact).
         // ══════════════════════════════════════════════════════════
         for (const proj of (data.projects || [])) {
           if (!proj.paymentPlan?.installments || proj.status === 'ANNULE' || proj.status === 'PAYE') continue;
@@ -610,26 +623,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!overdue) continue;
 
           const daysLate = Math.floor((now.getTime() - new Date(overdue.expectedDate).getTime()) / (1000 * 60 * 60 * 24));
-          const alreadyRelanced = (data.notifications || []).some(n =>
-            n.link === proj.id && n.message.includes(`RELANCE AUTO`) && n.message.includes(`J+${daysLate}`)
-          );
-          if (alreadyRelanced) continue;
 
-          if (daysLate === 7) {
+          if (daysLate >= 7 && daysLate < 14) {
             await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({
               targetRole: 'COMMERCIAL', type: 'WARNING', link: proj.id,
-              message: `RELANCE AUTO (J+7) : échéance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF dépassée sur « ${proj.name} ». Merci de contacter le client.`,
+              dedupKey: `relance-j7-${proj.id}`,
+              message: `RELANCE AUTO (J+${daysLate}) : échéance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF dépassée sur « ${proj.name} ». Merci de contacter le client.`,
             })}).catch(() => {});
-          } else if (daysLate === 14) {
+          } else if (daysLate >= 14 && daysLate < 30) {
             await apiFetch('/tasks', { method: 'POST', body: JSON.stringify({
               receiverRole: 'COMMERCIAL', priority: 'HIGH', link: proj.id,
-              title: `RELANCE URGENTE (J+14) : ${proj.name}`,
-              content: `Échéance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF dépassée depuis 14 jours. Contactez le client immédiatement.`,
+              dedupKey: `relance-j14-${proj.id}`,
+              title: `RELANCE URGENTE (J+${daysLate}) : ${proj.name}`,
+              content: `Échéance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF dépassée depuis ${daysLate} jours. Contactez le client immédiatement.`,
             })}).catch(() => {});
-          } else if (daysLate === 30) {
+          } else if (daysLate >= 30) {
             await apiFetch('/notifications', { method: 'POST', body: JSON.stringify({
               targetRole: 'GERANT', type: 'ERROR', link: proj.id,
-              message: `RELANCE AUTO (J+30) : « ${proj.name} » a une créance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF en retard de 30 jours. Décision direction requise.`,
+              dedupKey: `relance-j30-${proj.id}`,
+              message: `RELANCE AUTO (J+30) : « ${proj.name} » a une créance de ${(overdue.amount || 0).toLocaleString('fr-FR')} GNF en retard de ${daysLate} jours. Décision direction requise.`,
             })}).catch(() => {});
           }
         }
@@ -776,6 +788,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(null);
     setCurrentRole(null);
     localStorage.removeItem('coord_user');
+    // C12 : purge complète de l'état en mémoire — avant, notifications,
+    // trésorerie, employés, écritures… survivaient au logout et s'affichaient
+    // au compte suivant sur le même navigateur. Le reload garantit un état
+    // vierge quoi qu'il arrive.
+    setProjects([]); setExpenses([]); setSystemUsers([]); setProspects([]);
+    setProposals([]); setCatalogue([]); setEmployees([]); setContracts([]);
+    setLeaveRequests([]); setPayslips([]); setTreasuryAccounts([]); setTransactions([]);
+    setTasks([]); setNotifications([]); setInternalMessages([]);
+    setAccountingAccounts([]); setAccountingJournals([]); setAccountingEntries([]); setAssets([]);
+    setBtpOffres([]); setBtpChantiers([]); setBtpSituations([]);
+    window.location.href = window.location.pathname;
   };
 
   const syncProject = async (id: string, updates: Partial<Project>) => {
@@ -792,10 +815,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const sendMessage = async (receiverRole: Role | 'ALL', content: string, attachment?: any) => {
     if (!currentUser) return;
     try {
+      // M4 : délégation d'absence — le message vers un rôle absent part
+      // vers son délégué, avec mention.
+      let finalReceiver = receiverRole;
+      let finalContent = content;
+      if (receiverRole !== 'ALL' && companyConfig?.delegations && companyConfig.delegations[receiverRole as Role]) {
+        finalReceiver = companyConfig.delegations[receiverRole as Role] as Role;
+        finalContent = `[Délégué depuis ${receiverRole}] ${content}`;
+      }
       // Le serveur dérive l'expéditeur du token (anti-usurpation).
       const res = await apiFetch('/messages', {
         method: 'POST',
-        body: JSON.stringify({ receiverRole, content, attachment })
+        body: JSON.stringify({ receiverRole: finalReceiver, content: finalContent, attachment })
       });
       if (res.ok) {
         const newMessage = await res.json();
@@ -910,6 +941,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ) => {
     const p = projects.find(proj => proj.id === projectId);
     if (!p) return null;
+
+    // ══════════════════════════════════════════════════════════
+    // C7 : anti double-encaissement — une tranche déjà payée ne
+    // peut pas être réglée une seconde fois (double-clic, clic
+    // simultané sur deux sessions…).
+    // ══════════════════════════════════════════════════════════
+    const targetInst = (p.paymentPlan?.installments || []).find(i => i.id === installmentId);
+    if (targetInst?.status === 'PAID') {
+      pushToast(`Cette tranche (« ${installmentName} ») est déjà payée — encaissement refusé.`, 'ERROR');
+      return null;
+    }
 
     // ══════════════════════════════════════════════════════════
     // T7 : Garde basse — un encaissement doit être strictement positif
@@ -1077,6 +1119,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await autoGenerateAccountingEntry('VENTE', amount, `Encaissement ${docNumber} - ${p.name}`);
 
     await addNotification('COMPTABLE', `Encaissement ${docNumber} : ${amount.toLocaleString('fr-FR')} GNF (HT: ${amountHT.toLocaleString('fr-FR')} + TVA: ${tvaAmount.toLocaleString('fr-FR')}) pour « ${p.name} ».`, 'SUCCESS');
+    // Mineur (audit V2) : le commercial est informé des acomptes encaissés
+    // sur son affaire — avant, il ne voyait que les impayés, jamais les paiements.
+    await addNotification('COMMERCIAL', `Acompte encaissé ${docNumber} : ${amount.toLocaleString('fr-FR')} GNF pour « ${p.name} ». Restant dû : ${Math.max(0, remaining - amount).toLocaleString('fr-FR')} GNF.`, 'SUCCESS');
 
     return newDoc;
   };
@@ -1135,8 +1180,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: `Remboursement ${docNumber} - Projet: ${p.name}${reason ? ` (${reason})` : ''}`,
     });
 
-    // Écriture comptable de remboursement (T12 : sans TVA déductible fantôme)
-    await autoGenerateAccountingEntry('ACHAT', amount, `Remboursement ${docNumber} - ${p.name}`, 0);
+    // Écriture d'extourne de la vente (M9 : Débit 701 HT / Débit 443 TVA / Crédit 521 TTC)
+    await autoGenerateAccountingEntry('EXTOURNE_VENTE', amount, `Remboursement ${docNumber} - ${p.name}`);
 
     await addNotification('GERANT', `Remboursement effectué : ${amount.toLocaleString('fr-FR')} GNF pour « ${p.name} » (${docNumber}).`, 'INFO');
 
@@ -1209,9 +1254,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const alertUnpaid = async (id: string) => {
     const p = projects.find(proj => proj.id === id);
     if (!p) return;
-    // On repasse le projet en attente de paiement si ce n'est pas déjà le cas
-    await syncProject(id, { paymentStatus: 'PENDING', accountantPaymentConfirm: false });
+
+    // ══════════════════════════════════════════════════════════
+    // M6 : un impayé (chèque rejeté) ROUVRIT la dernière tranche
+    // payée (la créance redevient due) et annule l'effet trésorerie
+    // de l'encaissement (DEBIT de contrepassation). Avant : la
+    // tranche restait PAID et la trésorerie restait gonflée.
+    // ══════════════════════════════════════════════════════════
+    const installments = [...(p.paymentPlan?.installments || [])];
+    const lastPaidIndex = installments.map(i => i.status).lastIndexOf('PAID');
+    let reopenedAmount = 0;
+    if (lastPaidIndex >= 0) {
+      reopenedAmount = installments[lastPaidIndex].amount || 0;
+      installments[lastPaidIndex] = {
+        ...installments[lastPaidIndex],
+        status: 'PENDING' as const,
+        paymentDate: undefined,
+        receiptDocumentId: undefined,
+        receiptNumber: undefined,
+      };
+      await syncProject(id, {
+        paymentStatus: 'PENDING',
+        accountantPaymentConfirm: false,
+        status: 'EN_COURS',
+        paymentPlan: { ...p.paymentPlan!, installments },
+      } as any);
+      if (reopenedAmount > 0 && treasuryAccounts.length > 0) {
+        await addTransaction({
+          accountId: treasuryAccounts[0].id,
+          type: 'DEBIT',
+          amount: reopenedAmount,
+          referenceId: p.id,
+          category: 'VENTE',
+          description: `CONTREPASSATION impayé — « ${p.name} » (chèque rejeté / paiement introuvable)`,
+        });
+      }
+    } else {
+      await syncProject(id, { paymentStatus: 'PENDING', accountantPaymentConfirm: false });
+    }
+
     await addNotification('COMMERCIAL', `ALERTE IMPAYÉ: Le paiement pour le projet "${p.name}" a été rejeté ou est introuvable. Veuillez suspendre les travaux et relancer le client.`, 'ERROR');
+    pushToast(`Impayé enregistré : tranche de ${reopenedAmount.toLocaleString('fr-FR')} GNF rouverte, trésorerie contrepassée.`, 'WARNING');
   };
 
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
@@ -1254,12 +1337,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCompanyConfig = async (config: CompanyConfig) => {
-    companyConfigRef.current = config; // T8 : maj synchrone du ref (numérotation atomique)
-    setCompanyConfig(config);
+    // C3 : fusion systématique avec la config complète courante — une
+    // sauvegarde partielle (champ de l'onglet Équipe) ne peut plus écraser
+    // docCounters ni les autres clés : la numérotation légale est protégée.
+    const merged = { ...companyConfigRef.current, ...config } as CompanyConfig;
+    companyConfigRef.current = merged; // T8 : maj synchrone du ref (numérotation atomique)
+    setCompanyConfig(merged);
     try {
       await apiFetch('/config/update', {
         method: 'POST',
-        body: JSON.stringify(config)
+        body: JSON.stringify(merged)
       });
     } catch (err) { reportError(err, 'Opération'); }
   };
@@ -1461,6 +1548,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const d = await res.json();
         setLeaveRequests(prev => [...prev, d]);
         await addNotification('GERANT', `Une nouvelle demande de congé a été soumise.`, 'INFO');
+        pushToast('Demande de congé envoyée.', 'SUCCESS');
+      } else {
+        // M13/C6 : l'échec (403 self-service…) est désormais VISIBLE —
+        // avant, le modal se fermait sans rien créer et sans message.
+        pushToast(`Demande non envoyée : ${await readApiError(res)}`, 'ERROR');
       }
     } catch (e) { reportError(e, 'Opération'); }
   };
@@ -1468,7 +1560,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateLeaveRequestStatus = async (id: string, status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => {
     setLeaveRequests(prev => prev.map(l => l.id === id ? { ...l, status, rejectionReason: reason } : l));
     try {
-      await apiFetch(`/rh/leaves/${id}/update`, { method: 'POST', body: JSON.stringify({ status, rejectionReason: reason }) });
+      const res = await apiFetch(`/rh/leaves/${id}/update`, { method: 'POST', body: JSON.stringify({ status, rejectionReason: reason }) });
+      if (!res.ok) {
+        // M13 : resynchronisation depuis le serveur + message — l'état
+        // optimiste ne peut plus diverger silencieusement.
+        pushToast(`Décision non enregistrée : ${await readApiError(res)}`, 'ERROR');
+        fetchData();
+        return;
+      }
       if (status === 'REJECTED') {
         await addNotification('ALL', `Une demande de congé a été rejetée. Motif: ${reason || 'Non spécifié'}`, 'WARNING');
       } else if (status === 'APPROVED') {
@@ -2497,7 +2596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // T12 : tvaOverride permet de passer la TVA RÉELLE (ex. dépense sans TVA → 0)
   // T17 : comptes stricts — plus de fallback « premier compte venu »
   // T18 : les écritures auto sont validées (VALIDATED) dès leur création
-  const autoGenerateAccountingEntry = async (type: 'VENTE' | 'ACHAT' | 'SALAIRE', amount: number, label: string, tvaOverride?: number) => {
+  const autoGenerateAccountingEntry = async (type: 'VENTE' | 'ACHAT' | 'SALAIRE' | 'EXTOURNE_VENTE', amount: number, label: string, tvaOverride?: number) => {
     if (accountingJournals.length === 0 || accountingAccounts.length === 0) {
       pushToast('Écriture non générée : journaux ou plan comptable vides. Initialisez le plan SYSCOHADA.', 'WARNING');
       return;
@@ -2582,17 +2681,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           { accountId: compteBanque.id, debit: 0, credit: amount, label }
         ]
       };
+    } else if (type === 'EXTOURNE_VENTE') {
+      // M9 : extourne d'une vente (remboursement client) — Débit 70x HT,
+      // Débit 443 TVA, Crédit 52x TTC. Avant : le remboursement passait
+      // en charge (60x) et minorait faussement le résultat.
+      if (!compteVente || !compteBanque) {
+        pushToast('Extourne non générée : comptes 70x ou 52x manquants dans le plan comptable.', 'WARNING');
+        return;
+      }
+      if (tva > 0 && !tvaCollecteeAcc) {
+        pushToast('Extourne non générée : compte 443 (TVA collectée) manquant dans le plan comptable.', 'WARNING');
+        return;
+      }
+      const lines = [
+        { accountId: compteVente.id, debit: ht, credit: 0, label: 'Extourne HT - ' + label },
+        ...(tva > 0 && tvaCollecteeAcc ? [{ accountId: tvaCollecteeAcc.id, debit: tva, credit: 0, label: 'Extourne TVA - ' + label }] : []),
+        { accountId: compteBanque.id, debit: 0, credit: amount, label }
+      ];
+      entry = { journalId: journalVentes.id, date: new Date().toISOString(), reference: 'AUTO-AV', description: label, status: 'DRAFT', lines };
     }
 
     if (entry) {
       entry.lines = entry.lines.filter((l: any) => l.debit > 0 || l.credit > 0);
-      const created = await postAccountingEntry(entry);
-      // T18 : les écritures générées par les flux métier sont postées
-      // immédiatement (VALIDATED) — elles alimentent bilan, TVA et
-      // reporting sans exiger une validation manuelle de chacune.
-      if (created) {
-        await validateAccountingEntry(created.id);
-      }
+      // M10 (T18 renforcé) : les écritures auto naissent DIRECTEMENT
+      // VALIDATED en un seul appel serveur (avant : création DRAFT puis
+      // validation — un échec intermédiaire laissait l'écriture invisible
+      // au bilan et à la TVA).
+      entry.status = 'VALIDATED';
+      entry.validatedAt = new Date().toISOString();
+      await postAccountingEntry(entry);
     }
   };
 
@@ -2761,6 +2878,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets,
       postAccountingEntry,
       autoGenerateAccountingEntry,
+      getNextDocNumber,
       validateAccountingEntry,
       createAsset,
       createAccountingAccount,

@@ -5,7 +5,7 @@ import { Role } from '../types';
 import { openSecureFile } from '../utils/secureFile';
 
 export default function InternalMessenger() {
-  const { currentUser, internalMessages, sendMessage, markAsRead, pushToast } = useApp();
+  const { currentUser, currentRole, internalMessages, sendMessage, markAsRead, pushToast } = useApp();
   const [selectedChannel, setSelectedChannel] = useState<Role | 'ALL'>('ALL');
   const [messageText, setMessageText] = useState('');
   const [pendingFile, setPendingFile] = useState<{ name: string; url: string } | null>(null);
@@ -24,6 +24,9 @@ export default function InternalMessenger() {
   ];
 
   // Messages du canal courant (mémoïsé pour éviter les effets en boucle)
+  // M5 : le filtrage suit le rôle AFFICHÉ (currentRole) — cohérent en Mode
+  // Souverain, où l'expéditeur reste signé de son identité JWT réelle.
+  const effectiveRole = currentRole || currentUser?.role;
   const filteredMessages = useMemo(() => {
     return (internalMessages || []).filter(msg => {
       if (selectedChannel === 'ALL') {
@@ -31,12 +34,12 @@ export default function InternalMessenger() {
       }
       return (
         (msg.receiverRole === selectedChannel && msg.senderId === currentUser?.id) ||
-        (msg.receiverRole === currentUser?.role && msg.senderRole === selectedChannel) ||
-        (msg.receiverRole === selectedChannel && msg.senderRole === currentUser?.role) ||
-        (msg.receiverRole === selectedChannel && currentUser?.role === selectedChannel)
+        (msg.receiverRole === effectiveRole && msg.senderRole === selectedChannel) ||
+        (msg.receiverRole === selectedChannel && msg.senderRole === effectiveRole) ||
+        (msg.receiverRole === selectedChannel && effectiveRole === selectedChannel)
       );
     }).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [internalMessages, selectedChannel, currentUser?.id, currentUser?.role]);
+  }, [internalMessages, selectedChannel, currentUser?.id, effectiveRole]);
 
   // Marquer comme lus UNE SEULE FOIS par message (audit : boucle de re-render)
   useEffect(() => {

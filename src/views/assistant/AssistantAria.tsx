@@ -20,7 +20,7 @@ export default function AssistantAria() {
         status: 'VALID',
         url: '' // Dans un cas réel, on uploaderait le contenu généré en PDF vers un storage, et on récupérerait l'URL.
       }, 'Sauvegarde GED');
-      alert('Document sauvegardé dans la GED !');
+      alert("Document sauvegardé dans la GED (contenu à joindre via l'URL ou un upload).");
     }
   };
 

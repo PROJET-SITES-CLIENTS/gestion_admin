@@ -20,7 +20,8 @@ export default function AssistantMessages() {
     if (editingId) {
       await crudUpdateItem('assistantContacts', editingId, formData, 'Modification contact');
     } else {
-      await crudCreateItem('assistantContacts', formData, 'Création contact VIP');
+      const ok = await crudCreateItem('assistantContacts', formData, 'Création contact VIP');
+      if (!ok) return; // M13 : on ne ferme le formulaire que si la création a réussi
     }
     setShowForm(false);
     setEditingId(null);

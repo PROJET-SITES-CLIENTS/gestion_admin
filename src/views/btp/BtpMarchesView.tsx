@@ -25,7 +25,7 @@ export const BtpMarchesView = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const fmt = (n: number) => (n || 0).toLocaleString('fr-FR');
-  const canManage = ['GERANT', 'COMMERCIAL', 'ETUDES', 'COMPTABLE', 'ASSISTANTE'].includes(currentRole || '');
+  const canManage = ['GERANT', 'COMMERCIAL', 'ETUDES', 'COMPTABLE'].includes(currentRole || ''); // M2 : ASSISTANTE retirée (création/signature hors périmètre)
 
   const selected = btpMarches.find(m => m.id === selectedId);
   const selectedChantiers = selected ? btpChantiers.filter(c => c.marche_id === selected.id) : [];

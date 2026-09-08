@@ -28,7 +28,8 @@ export default function AssistantDocuments() {
     if (editingId) {
       await crudUpdateItem('assistantDocuments', editingId, formData, 'Modification document');
     } else {
-      await crudCreateItem('assistantDocuments', formData, 'Création document');
+      const ok = await crudCreateItem('assistantDocuments', formData, 'Création document');
+      if (!ok) return; // M13
     }
     setShowForm(false);
     setEditingId(null);
@@ -168,7 +169,7 @@ export default function AssistantDocuments() {
                 </td>
               </tr>
             ))}
-            {assistantDocuments.length === 0 && (
+            {filteredDocs.length === 0 && (
               <tr>
                 <td colSpan={5} className="p-6 text-center text-slate-400">Aucun document administratif enregistré.</td>
               </tr>

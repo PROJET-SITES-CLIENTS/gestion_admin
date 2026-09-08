@@ -17,7 +17,8 @@ export default function AssistantTasks() {
     if (editingId) {
       await crudUpdateItem('assistantTasks', editingId, formData, 'Modification tâche');
     } else {
-      await crudCreateItem('assistantTasks', formData, 'Création tâche');
+      const created = await crudCreateItem('assistantTasks', formData, 'Création tâche');
+      if (!created) return; // M13
       // Push to global inbox if delegated
       if (formData.delegatedTo && ['GERANT', 'COMMERCIAL', 'COMPTABLE', 'RH'].includes(formData.delegatedTo)) {
         await addTask(formData.delegatedTo as any, `Délégation: ${formData.title}`, formData.description || 'Délégué par la Direction Administrative', formData.urgence === 'HAUTE' ? 'HIGH' : 'MEDIUM');
@@ -56,7 +57,7 @@ export default function AssistantTasks() {
             </div>
             {t.description && <p className="text-xs text-slate-500 mb-2">{t.description}</p>}
             <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase">
-              <span>{t.status}</span>
+              <span>{t.status === 'TODO' ? 'À faire' : t.status === 'IN_PROGRESS' ? 'En cours' : t.status === 'DONE' ? 'Terminée' : t.status}</span>
               {t.delegatedTo && <span>Dél. : {t.delegatedTo}</span>}
             </div>
           </div>

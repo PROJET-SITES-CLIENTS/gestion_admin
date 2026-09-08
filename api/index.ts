@@ -191,7 +191,7 @@ const CRUD_TABLES: Record<string, { roles: string[]; defaults?: any; userField?:
 
   // ══ NOUVELLES ENTITÉS CDC BTP — Marché, Lot, Tâche ══
   btpMarches: {
-    roles: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','ASSISTANTE','DEVELOPPEUR'],
+    roles: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','DEVELOPPEUR'], // M2 : ASSISTANTE retirée
     defaults: { statut: 'brouillon' },
     userField: 'created_by',
   },
@@ -357,11 +357,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         response.contracts = allData.contracts || [];
         response.leave_requests = allData.leave_requests || [];
         response.payslips = allData.payslips || [];
+      } else {
+        // ══════════════════════════════════════════════════════════
+        // C6 : self-service RH pour les non-RH — « Mon Dossier »,
+        // « Mes Absences », « Mes Bulletins » reçoivent LES données
+        // de l'employé lié au compte (rapprochement userId, sinon
+        // nom complet). Avant : tables vides → écrans morts.
+        // ══════════════════════════════════════════════════════════
+        try {
+          const dbUser = await db.getUserByUsername(user.username);
+          const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const myEmp = (allData.employees || []).find((e: any) =>
+            e.userId === user.id ||
+            (dbUser && norm(`${e.firstName} ${e.lastName}`) === norm(`${dbUser.first_name} ${dbUser.last_name}`)));
+          response.employees = myEmp ? [myEmp] : [];
+          response.contracts = (allData.contracts || []).filter((c: any) => myEmp && c.employeeId === myEmp.id);
+          response.leave_requests = (allData.leave_requests || []).filter((l: any) => myEmp && l.employeeId === myEmp.id);
+          response.payslips = (allData.payslips || []).filter((p: any) => myEmp && p.employeeId === myEmp.id);
+        } catch { response.employees = []; response.contracts = []; response.leave_requests = []; response.payslips = []; }
       }
 
       const userId = user.id;
       response.internal_messages = (allData.internal_messages || []).filter((m: any) => m.receiverRole === 'ALL' || m.receiverRole === role || m.senderId === userId);
-      response.tasks = (allData.tasks || []).filter((t: any) => t.receiverRole === role || t.receiverRole === 'ALL' || t.senderId === userId);
+
+      // ══════════════════════════════════════════════════════════
+      // M14 : escalade 48h calculée CÔTÉ SERVEUR pour toutes les
+      // tâches (avant : seul un client voyant la tâche l'esgalait),
+      // et le GÉRANT voit toutes les tâches escaladées, quel que
+      // soit le rôle destinataire.
+      // ══════════════════════════════════════════════════════════
+      {
+        const nowMs = Date.now();
+        for (const t of (allData.tasks || [])) {
+          if (t.status === 'TODO' && t.priority === 'HIGH' && !t.escalated
+              && (nowMs - new Date(t.createdAt).getTime()) > 48 * 3600 * 1000) {
+            await db.update('tasks', t.id, { escalated: true }).catch(() => {});
+            t.escalated = true;
+          }
+        }
+      }
+      response.tasks = (allData.tasks || []).filter((t: any) =>
+        t.receiverRole === role || t.receiverRole === 'ALL' || t.senderId === userId
+        || (role === 'GERANT' && t.escalated === true));
       response.notifications = (allData.notifications || []).filter((n: any) => n.targetRole === role || n.targetRole === 'ALL');
 
       // ══════════════════════════════════════════════════════════
@@ -373,7 +410,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const btpActive = ((configMain as any).activeModules || []).includes('BTP');
       const BTP_TABLE_ROLES: Record<string, string[]> = {
         btpOffres: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','COND_TRAVAUX','DEVELOPPEUR'],
-        btpMarches: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','ASSISTANTE','COND_TRAVAUX','DEVELOPPEUR'],
+        btpMarches: ['GERANT','COMMERCIAL','ETUDES','COMPTABLE','COND_TRAVAUX','DEVELOPPEUR'], // M2 : ASSISTANTE retirée (création/signature hors périmètre)
         btpChantiers: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','RESP_MATERIEL','MAGASINIER_BTP','ETUDES','COMPTABLE','RH','DEVELOPPEUR'],
         btpEngins: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','RESP_MATERIEL','MAGASINIER_BTP','DEVELOPPEUR'],
         btpIncidents: ['GERANT','COND_TRAVAUX','CHEF_CHANTIER','QHSE_BTP','DEVELOPPEUR'],
@@ -408,12 +445,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           response.btpEmployeeDirectory = (allData.employees || []).map((e: any) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, position: e.position }));
         }
       }
-      const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
-      for (const t of agroTables) response[t] = allData[t] || [];
+      // M1 : les tables agro ne partent que si le module AGRO est actif
+      const agroActive = ((configMain as any).activeModules || []).includes('AGRO');
+      if (agroActive) {
+        const agroTables = ['agroLotMatierePremieres','agroLotProductions','agroControles','agroCommandes','agroLignesLivrees','agroFiches','agroReclamations'];
+        for (const t of agroTables) response[t] = allData[t] || [];
+      }
 
-      // Tables Assistante + Comptabilité + Commercial (absentes avant l'audit)
-      const extraTables = ['assistantMeetings','assistantTravels','assistantDocuments','assistantContacts','assistantTasks','accountingAccounts','accountingJournals','accountingEntries','assets','catalogue','proposals'];
-      for (const t of extraTables) response[t] = allData[t] || [];
+      // ══════════════════════════════════════════════════════════
+      // M1 : tables Assistante + Comptabilité + Commercial filtrées
+      // par rôle — le grand livre (accountingEntries) et les
+      // immobilisations ne fuient plus vers tous les comptes.
+      // ══════════════════════════════════════════════════════════
+      const ASSISTANT_TABLES = ['assistantMeetings','assistantTravels','assistantDocuments','assistantContacts','assistantTasks'];
+      if (['GERANT', 'ASSISTANTE', 'DEVELOPPEUR'].includes(role)) {
+        for (const t of ASSISTANT_TABLES) response[t] = allData[t] || [];
+      }
+      if (FINANCE.includes(role) || role === 'DEVELOPPEUR') {
+        response.accountingAccounts = allData.accountingAccounts || [];
+        response.accountingJournals = allData.accountingJournals || [];
+        response.accountingEntries = allData.accountingEntries || [];
+        response.assets = allData.assets || [];
+      }
+      if (['GERANT', 'COMMERCIAL', 'ETUDES', 'COMPTABLE', 'DEVELOPPEUR'].includes(role)) {
+        response.catalogue = allData.catalogue || [];
+        response.proposals = allData.proposals || [];
+      }
       // T29 : les documents GED confidentiels ne partent qu'aux rôles autorisés
       if (!['GERANT', 'ASSISTANTE', 'DEVELOPPEUR'].includes(role)) {
         response.assistantDocuments = (response.assistantDocuments || []).filter((d: any) => !d.isConfidential);
@@ -484,9 +541,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // CONFIG
     // ============================================================
     if (route === 'config' && param1 === 'update' && method === 'POST') {
-      const user = requireRole(req, res, 'GERANT'); if (!user) return;
+      // C4 : le COMPTABLE peut désormais enregistrer la configuration fiscale
+      // (identité, signature, cachet, TVA, objectifs) — mais SEULEMENT ce
+      // sous-ensemble ; les clés de gouvernance (modules, délégations,
+      // permissions, paie) restent réservées au Gérant.
+      const user = requireRole(req, res, 'GERANT', 'COMPTABLE'); if (!user) return;
+      const ACCOUNTANT_CONFIG_KEYS = ['companyName','companyAddress','companyId','companyEmail','companyPhone','bankingDetails','logoUrl','logoBase64','stampUrl','signatureUrl','tvaRate','docCounters','clientTarget','targetAmountPerClient'];
+      let incoming = { ...sanitize(body) };
+      if (user.role !== 'GERANT') {
+        const filtered: any = {};
+        for (const k of ACCOUNTANT_CONFIG_KEYS) if (incoming[k] !== undefined) filtered[k] = incoming[k];
+        incoming = filtered;
+      }
       const existing = await db.getItem('config', 'main') || {};
-      const updated = { ...existing, ...sanitize(body) };
+      const updated = { ...existing, ...incoming };
+      // C3 : les compteurs de numérotation se MERGENT (jamais remplacés) —
+      // une sauvegarde partielle ne peut plus effacer les compteurs des
+      // autres préfixes ou des années précédentes.
+      if (incoming.docCounters || existing.docCounters) {
+        updated.docCounters = { ...(existing.docCounters || {}), ...(incoming.docCounters || {}) };
+      }
       const { id, ...data } = updated;
       await db.update('config', 'main', data);
       const safe: any = {};
@@ -523,12 +597,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (route === 'tasks' && method === 'POST' && !param1) {
       const user = requireAuth(req, res); if (!user) return;
+      // C1 : déduplication des tâches automatiques par clé (relances J+14…)
+      if (body.dedupKey) {
+        const allTasks = await db.getTable('tasks');
+        const dup = allTasks.find((t: any) => t.dedupKey === body.dedupKey);
+        if (dup) return res.json(dup);
+      }
       const task = {
         id: genId(), senderId: user.id, senderRole: user.role,
         senderName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username,
         receiverRole: body.receiverRole, title: sanitize(body.title, 250),
         content: sanitize(body.content || '', 10000), status: 'TODO',
         priority: body.priority || 'MEDIUM', link: body.link || '',
+        dedupKey: body.dedupKey || undefined,
         escalated: false, createdAt: new Date().toISOString(),
       };
       await db.insert('tasks', task);
@@ -561,6 +642,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ============================================================
+    // C5 : UPLOADS (pièces jointes messagerie — la route manquait
+    // sur l'API Vercel, le trombone était mort pour tout le monde)
+    // ============================================================
+    if (route === 'uploads' && method === 'POST' && !param1) {
+      const user = requireAuth(req, res); if (!user) return;
+      const filename = String((body as any)?.filename || 'fichier');
+      // Le client envoie un dataURL (« data:type;base64,… ») dans base64.
+      const raw = String((body as any)?.base64 || (body as any)?.data || '');
+      if (!raw) return res.status(400).json({ error: 'Fichier vide.' });
+      const m = raw.match(/^data:([^;]+);base64,(.*)$/s);
+      const contentType = String((body as any)?.contentType || (m ? m[1] : 'application/octet-stream'));
+      const dataBase64 = m ? m[2] : raw;
+      if (!dataBase64) return res.status(400).json({ error: 'Fichier vide.' });
+      // Limite ~4 Mo en base64
+      if (dataBase64.length > 5_600_000) return res.status(413).json({ error: 'Fichier trop volumineux (max ~4 Mo).' });
+      const ALLOWED = ['application/pdf','image/png','image/jpeg','image/jpg','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/zip','text/plain','text/csv'];
+      if (!ALLOWED.includes(contentType)) return res.status(400).json({ error: `Type de fichier non autorisé (${contentType}).` });
+      const doc = {
+        id: genId(), filename: sanitize(filename, 200), contentType,
+        data: dataBase64, uploaded_by: user.id, createdAt: new Date().toISOString(),
+      };
+      await db.insert('uploads', doc);
+      return res.status(201).json({ url: `/api/uploads/${doc.id}`, filename: doc.filename, contentType });
+    }
+    if (route === 'uploads' && param1 && method === 'GET') {
+      const user = requireAuth(req, res); if (!user) return;
+      const doc = await db.getItem('uploads', param1);
+      if (!doc) return res.status(404).json({ error: 'Fichier introuvable.' });
+      const buffer = Buffer.from(doc.data, 'base64');
+      res.setHeader('Content-Type', doc.contentType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.filename || 'fichier')}"`);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      return (res as any).end(buffer);
+    }
+
+    // ============================================================
     // RH
     // ============================================================
     if (route === 'rh' && param1 === 'data') {
@@ -590,7 +707,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(201).json(ctr);
     }
     if (route === 'rh' && param1 === 'leaves' && method === 'POST' && !param2) {
-      const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
+      // C6 : les non-RH peuvent demander un congé UNIQUEMENT pour leur
+      // propre dossier employé (rapprochement userId, sinon nom complet).
+      const user = requireAuth(req, res); if (!user) return;
+      const isHrRole = RH_ROLES.includes(user.role);
+      if (!isHrRole) {
+        const dbUser = await db.getUserByUsername(user.username);
+        const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const employees = await db.getTable('employees');
+        const myEmp = employees.find((e: any) =>
+          e.userId === user.id ||
+          (dbUser && norm(`${e.firstName} ${e.lastName}`) === norm(`${dbUser.first_name} ${dbUser.last_name}`)));
+        if (!myEmp || (body as any)?.employeeId !== myEmp.id) {
+          return res.status(403).json({ error: 'Vous ne pouvez demander un congé que pour votre propre dossier.' });
+        }
+      }
       const lr = { id: genId(), ...sanitize(body), status: 'PENDING', createdAt: new Date().toISOString() };
       await db.insert('leave_requests', lr);
       return res.status(201).json(lr);
@@ -618,6 +749,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (route === 'rh' && param1 === 'payslips' && param2 && param3 === 'update') {
       const user = requireRole(req, res, ...RH_ROLES); if (!user) return;
+      // M11 : le PAIEMENT d'un bulletin est réservé au GÉRANT, côté serveur
+      // aussi (avant : simple bouton masqué dans l'UI).
+      if ((body as any)?.status === 'PAID' && user.role !== 'GERANT') {
+        return res.status(403).json({ error: 'Seul le Gérant peut marquer un bulletin payé.' });
+      }
       // T26 : machine à états stricte DRAFT → VALIDATED → PAID (pas de re-paiement)
       if ((body as any)?.status) {
         const current = await db.getTable('payslips');
@@ -670,6 +806,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (route === 'expenses' && param2 === 'update') {
       const user = requireRole(req, res, ...FINANCE); if (!user) return;
+      // M13 : machine à états — PAID verrouillé (sinon transaction + écriture
+      // générées au paiement resteraient sans contrepartie).
+      if ((body as any)?.status !== undefined) {
+        const existingExp = await db.getItem('expenses', param1);
+        const EXPENSES_TRANSITIONS: Record<string, string[]> = {
+          PENDING: ['PAID', 'REJECTED', 'CANCELLED'],
+          REJECTED: [], CANCELLED: [], PAID: [],
+        };
+        if (existingExp && !(EXPENSES_TRANSITIONS[existingExp.status] || []).includes((body as any).status)) {
+          return res.status(400).json({ error: `Transition interdite : ${existingExp.status} → ${(body as any).status}.` });
+        }
+      }
       const updated = await db.update('expenses', param1, sanitize(body));
       if (!updated) return res.status(404).json({ error: 'Dépense non trouvée.' });
       return res.json(updated);
@@ -1014,6 +1162,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
+      // M10 : une écriture VALIDATED est verrouillée — le « verrouillage
+      // irréversible / piste d'audit légale » est désormais garanti serveur.
+      if (param1 === 'accountingEntries') {
+        const existingEntry = await db.getItem('accountingEntries', param2);
+        if (existingEntry && existingEntry.status === 'VALIDATED' && Object.keys(updates).some(k => k !== 'updated_at')) {
+          return res.status(400).json({ error: 'Écriture validée : verrouillée (piste d\'audit légale).' });
+        }
+      }
+
+      // M13 : dépenses — machine à états : PAID est verrouillé
+      // (une dépense payée ne peut plus être rejetée/annulée sans extourne
+      // comptable, sinon transaction + écriture restent sans contrepartie).
+      if (param1 === 'expenses' && updates.status !== undefined) {
+        const existingExp = await db.getItem('expenses', param2);
+        const EXPENSES_TRANSITIONS: Record<string, string[]> = {
+          PENDING: ['PAID', 'REJECTED', 'CANCELLED'],
+          REJECTED: [],
+          CANCELLED: [],
+          PAID: [],
+        };
+        if (existingExp && !(EXPENSES_TRANSITIONS[existingExp.status] || []).includes(updates.status)) {
+          return res.status(400).json({ error: `Transition interdite : ${existingExp.status} → ${updates.status}.` });
+        }
+      }
+
       // ══════════════════════════════════════════════════════════
       // P2-3 : TRANSITIONS DE STATUT VALIDÉES (machine d'état serveur)
       // ══════════════════════════════════════════════════════════
@@ -1103,7 +1276,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(updated);
     }
     if (route === 'crud' && param1 && param2 && param3 === 'delete') {
-      const user = requireRole(req, res, 'GERANT'); if (!user) return;
+      // C8 : suppression par table — l'Assistante peut supprimer dans SON
+      // espace (sinon 5 corbeilles visibles mais mortes) ; le reste reste Gérant.
+      const DELETE_ROLES: Record<string, string[]> = {
+        assistantMeetings: ['GERANT', 'ASSISTANTE'],
+        assistantTravels: ['GERANT', 'ASSISTANTE'],
+        assistantDocuments: ['GERANT', 'ASSISTANTE'],
+        assistantContacts: ['GERANT', 'ASSISTANTE'],
+        assistantTasks: ['GERANT', 'ASSISTANTE'],
+      };
+      const allowed = DELETE_ROLES[param1] || ['GERANT'];
+      const user = requireRole(req, res, ...allowed); if (!user) return;
       const ok = await db.delete(param1, param2);
       return res.json({ success: ok });
     }

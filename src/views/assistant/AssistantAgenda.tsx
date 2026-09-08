@@ -19,14 +19,25 @@ export default function AssistantAgenda() {
 
   const handleSaveMeeting = async () => {
     if (!meetingForm.title) return;
-    await crudCreateItem('assistantMeetings', meetingForm, 'Création réunion');
+    const ok = await crudCreateItem('assistantMeetings', meetingForm, 'Création réunion');
+    if (!ok) return; // M13 : on ne ferme le formulaire que si la création a réussi
     setShowMeetingForm(false);
     setMeetingForm({ title: '', date: '', time: '', location: '', participants: '', agenda: '', status: 'PLANNED' });
   };
 
   const handleSaveTravel = async () => {
     if (!travelForm.destination) return;
-    await crudCreateItem('assistantTravels', travelForm, 'Création déplacement');
+    // M16 : dates cohérentes — le retour ne peut pas précéder le départ
+    if (travelForm.startDate && travelForm.endDate && travelForm.endDate < travelForm.startDate) {
+      alert('La date de retour ne peut pas précéder la date de départ.');
+      return;
+    }
+    // C9 : le budget est un nombre FINI (un champ vidé produisait NaN → null
+    // en base → crash de tout l'écran Agenda au polling suivant).
+    const budget = Number(travelForm.budget);
+    const payload = { ...travelForm, budget: isFinite(budget) && budget > 0 ? budget : 0 };
+    const ok = await crudCreateItem('assistantTravels', payload, 'Création déplacement');
+    if (!ok) return;
     setShowTravelForm(false);
     setTravelForm({ destination: '', startDate: '', endDate: '', purpose: '', budget: 0, status: 'PLANNED' });
   };
@@ -82,7 +93,11 @@ export default function AssistantAgenda() {
                 <div key={m.id} className="bg-white border border-slate-200 rounded-sm p-5 relative group">
                   <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => crudUpdateItem('assistantMeetings', m.id, { status: m.status === 'PLANNED' ? 'HELD' : 'PLANNED' }, 'Statut')} className="p-1.5 bg-slate-100 text-slate-600 hover:text-emerald-600 rounded" title="Marquer comme tenue"><Check size={14}/></button>
-                    <button onClick={() => crudDeleteItem('assistantMeetings', m.id, 'Suppression')} className="p-1.5 bg-slate-100 text-slate-600 hover:text-rose-600 rounded"><Trash2 size={14}/></button>
+                    {/* M16 : annulation possible (le statut existait, aucun bouton) */}
+                    {m.status !== 'CANCELED' && (
+                      <button onClick={() => { if (window.confirm('Annuler cette réunion ?')) crudUpdateItem('assistantMeetings', m.id, { status: 'CANCELED' }, 'Annulation'); }} className="p-1.5 bg-slate-100 text-slate-600 hover:text-amber-600 rounded" title="Annuler la réunion"><Clock size={14}/></button>
+                    )}
+                    <button onClick={() => { if (window.confirm('Supprimer cette réunion ?')) crudDeleteItem('assistantMeetings', m.id, 'Suppression'); }} className="p-1.5 bg-slate-100 text-slate-600 hover:text-rose-600 rounded"><Trash2 size={14}/></button>
                   </div>
                   <div className="flex gap-4">
                     <div className="w-14 shrink-0 text-center flex flex-col items-center justify-center bg-purple-50 text-purple-700 rounded py-2">
@@ -160,7 +175,7 @@ export default function AssistantAgenda() {
               {assistantTravels.map((t: AssistantTravel) => (
                 <div key={t.id} className="bg-white border border-slate-200 rounded-sm p-4 relative group">
                   <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => crudDeleteItem('assistantTravels', t.id, 'Suppression')} className="p-1.5 bg-slate-100 text-slate-600 hover:text-rose-600 rounded"><Trash2 size={14}/></button>
+                    <button onClick={() => { if (window.confirm('Supprimer ce déplacement ?')) crudDeleteItem('assistantTravels', t.id, 'Suppression'); }} className="p-1.5 bg-slate-100 text-slate-600 hover:text-rose-600 rounded"><Trash2 size={14}/></button>
                   </div>
                   <h4 className="font-bold text-slate-800 text-lg flex items-center gap-2">
                     <Plane size={18} className="text-slate-400" /> {t.destination}
@@ -168,15 +183,34 @@ export default function AssistantAgenda() {
                   <p className="text-sm text-slate-600 mt-1">{t.purpose}</p>
                   
                   <div className="bg-slate-50 p-3 rounded text-sm text-slate-700 font-medium mt-3 flex justify-between items-center border border-slate-100">
-                    <div>Du {new Date(t.startDate).toLocaleDateString('fr-FR')} au {new Date(t.endDate).toLocaleDateString('fr-FR')}</div>
-                    <div className="text-purple-700">{t.budget.toLocaleString()} GNF</div>
+                    <div>
+                      {t.startDate ? `Du ${new Date(t.startDate).toLocaleDateString('fr-FR')}` : 'Départ —'}
+                      {t.endDate ? ` au ${new Date(t.endDate).toLocaleDateString('fr-FR')}` : ' — Retour'}
+                    </div>
+                    {/* C9 : rendu sûr même si un ancien budget null existe en base */}
+                    <div className="text-purple-700">{(t.budget ?? 0).toLocaleString('fr-FR')} GNF</div>
                   </div>
-                  
+
                   <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
                     <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded ${t.status === 'COMPLETED' ? 'bg-slate-100 text-slate-700' : t.status === 'ONGOING' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
                       {t.status === 'ONGOING' ? 'En cours' : t.status === 'COMPLETED' ? 'Terminé' : 'Planifié'}
                     </span>
-                    <button className="text-xs text-purple-600 font-semibold hover:underline">Voir itinéraire</button>
+                    <div className="flex items-center gap-3">
+                      {/* M16 : le statut du déplacement est enfin pilotable */}
+                      {t.status === 'PLANNED' && (
+                        <button onClick={() => crudUpdateItem('assistantTravels', t.id, { status: 'ONGOING' }, 'Départ')} className="text-xs text-emerald-600 font-semibold hover:underline">► Partis</button>
+                      )}
+                      {(t.status === 'PLANNED' || t.status === 'ONGOING') && (
+                        <button onClick={() => crudUpdateItem('assistantTravels', t.id, { status: 'COMPLETED' }, 'Retour')} className="text-xs text-slate-600 font-semibold hover:underline">✓ Terminés</button>
+                      )}
+                      {/* M16 : itinéraire réel (Maps) au lieu du bouton mort */}
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.destination || '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-purple-600 font-semibold hover:underline"
+                      >Voir itinéraire</a>
+                    </div>
                   </div>
                 </div>
               ))}

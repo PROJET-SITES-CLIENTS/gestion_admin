@@ -196,11 +196,15 @@ export function AccountantExpenses() {
                           <option value="" disabled>Payer avec...</option>
                           {treasuryAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                         </select>
-                        <button 
+                        <button
                           onClick={() => {
-                            const reason = window.prompt('Motif du rejet :');
-                            if (reason !== null) {
-                              updateExpenseStatus(exp.id, 'REJECTED', reason);
+                            // Mineur V2 : motif réellement obligatoire (une
+                            // chaîne vide passait la garde « !== null »).
+                            const reason = window.prompt('Motif du rejet (obligatoire) :') || '';
+                            if (reason.trim()) {
+                              updateExpenseStatus(exp.id, 'REJECTED', reason.trim());
+                            } else if (reason !== undefined) {
+                              pushToast('Motif du rejet obligatoire.', 'ERROR');
                             }
                           }}
                           className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-sm transition-colors"

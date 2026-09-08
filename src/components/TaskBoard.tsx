@@ -4,7 +4,7 @@ import { CheckCircle2, Clock, Inbox, Send, AlertCircle, ArrowRight, Plus, X } fr
 import { Role } from '../types';
 
 export default function TaskBoard() {
-  const { tasks, currentUser, updateTaskStatus, addTask } = useApp();
+  const { tasks, currentUser, currentRole, updateTaskStatus, addTask } = useApp();
   const [activeTab, setActiveTab] = useState<'RECEIVED' | 'SENT'>('RECEIVED');
   const [showNewTask, setShowNewTask] = useState(false);
   const [newTask, setNewTask] = useState({
@@ -16,8 +16,12 @@ export default function TaskBoard() {
 
   if (!currentUser) return null;
 
-  const myReceivedTasks = tasks.filter(t => t.receiverRole === currentUser.role || t.receiverRole === 'ALL');
-  const mySentTasks = tasks.filter(t => t.senderRole === currentUser.role);
+  // M5 : la boîte suit le rôle AFFICHÉ (currentRole) — en Mode Souverain,
+  // le gérant qui « exécute · Commercial » voit la boîte du commercial
+  // (avant : elle restait figée sur GERANT).
+  const effectiveRole = currentRole || currentUser.role;
+  const myReceivedTasks = tasks.filter(t => t.receiverRole === effectiveRole || t.receiverRole === 'ALL');
+  const mySentTasks = tasks.filter(t => t.senderRole === effectiveRole || t.senderRole === currentUser.role);
 
   const displayedTasks = activeTab === 'RECEIVED' ? myReceivedTasks : mySentTasks;
 

@@ -4,7 +4,7 @@ import { Plus, Search, FileText, Send, Check, X, Printer, Trash2 } from 'lucide-
 import { generateCommercialProposalPDF } from '../utils/pdfGenerator';
 
 export const CommercialProposals: React.FC = () => {
-  const { catalogue, proposals, prospects, generateProposal, updateProposalStatus, addCatalogueItem, currentRole, companyConfig } = useApp();
+  const { catalogue, proposals, prospects, generateProposal, updateProposalStatus, addCatalogueItem, updateCatalogueItem, deleteCatalogueItem, currentRole, companyConfig } = useApp();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewProposal, setShowNewProposal] = useState(false);
@@ -40,7 +40,14 @@ export const CommercialProposals: React.FC = () => {
 
   const handleUpdateItem = (index: number, field: string, value: number) => {
     const newItems = [...selectedItems];
-    newItems[index] = { ...newItems[index], [field]: value };
+    // Mineur V2 : clamp — les attributs min/max HTML ne bloquent pas la
+    // saisie clavier (une remise de 150 % ou une quantité 0/négative passait).
+    let v = Number(value);
+    if (!isFinite(v)) v = 0;
+    if (field === 'discount') v = Math.min(100, Math.max(0, v));
+    if (field === 'quantity') v = Math.max(1, Math.round(v));
+    if (field === 'unitPrice') v = Math.max(0, v);
+    newItems[index] = { ...newItems[index], [field]: v };
     setSelectedItems(newItems);
   };
 
@@ -211,8 +218,21 @@ export const CommercialProposals: React.FC = () => {
                     <div className="text-xs text-slate-500">{cat.description}</div>
                   </td>
                   <td className="px-4 py-3 font-mono">{cat.basePrice.toLocaleString()} GNF</td>
-                  <td className="px-4 py-3 text-right">
-                    <button className="text-indigo-600 hover:underline">Modifier</button>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {/* M12 : les boutons Modifier/Supprimer sont enfin câblés
+                        (avant : « Modifier » était mort, aucune suppression). */}
+                    <button
+                      onClick={() => {
+                        const newPrice = window.prompt(`Nouveau prix pour « ${cat.name} » (GNF) :`, String(cat.basePrice));
+                        const v = Number(newPrice);
+                        if (newPrice !== null && isFinite(v) && v > 0) updateCatalogueItem(cat.id, { basePrice: v });
+                      }}
+                      className="text-indigo-600 hover:underline"
+                    >Modifier</button>
+                    <button
+                      onClick={() => { if (window.confirm(`Supprimer « ${cat.name} » du catalogue ?`)) deleteCatalogueItem(cat.id); }}
+                      className="text-rose-600 hover:underline ml-3"
+                    >Supprimer</button>
                   </td>
                 </tr>
               ))}

@@ -152,17 +152,23 @@ export const ProspectionCRM: React.FC = () => {
       user: currentUser?.firstName + ' ' + currentUser?.lastName
     };
     
-    updateProspect(selectedProspect.id, { 
+    // C10 (mineur P9) : le RDV ne RÉTROGRADE plus un prospect avancé —
+    // seuls les stages précoces passent automatiquement à RDV_FIXE
+    // (avant : un prospect GAGNE/NEGOCIATION retombait à RDV_FIXE).
+    const NON_REGRESSIFS = ['NEGOCIATION', 'PROPOSITION', 'GAGNE', 'PERDU'];
+    const newStage = NON_REGRESSIFS.includes(selectedProspect.stage) ? selectedProspect.stage : 'RDV_FIXE';
+
+    updateProspect(selectedProspect.id, {
       meetings: [...(selectedProspect.meetings || []), newMeeting],
       history: [...(selectedProspect.history || []), newHistory],
-      stage: 'RDV_FIXE' // Auto move to RDV Fixe
+      stage: newStage
     });
-    
+
     setSelectedProspect({
       ...selectedProspect,
       meetings: [...(selectedProspect.meetings || []), newMeeting],
       history: [...(selectedProspect.history || []), newHistory],
-      stage: 'RDV_FIXE'
+      stage: newStage
     });
     
     setNewMeetingDate('');
@@ -249,20 +255,43 @@ export const ProspectionCRM: React.FC = () => {
     e.preventDefault();
     const id = e.dataTransfer.getData('prospectId');
     const p = prospects.find(x => x.id === id);
-    if (p && p.stage !== newStage) {
-      const historyEntry = {
-        id: Date.now().toString(),
-        date: new Date().toISOString(),
-        action: `Déplacé de ${p.stage} vers ${newStage}`,
-        user: currentUser?.firstName + ' ' + currentUser?.lastName
-      };
-      updateProspect(id, { 
-        stage: newStage,
-        history: [...(p.history || []), historyEntry]
-      });
-      if (selectedProspect && selectedProspect.id === id) {
-        setSelectedProspect({ ...selectedProspect, stage: newStage, history: [...(selectedProspect.history || []), historyEntry] });
-      }
+    if (!p || p.stage === newStage) return;
+
+    // ══════════════════════════════════════════════════════════
+    // C10 : le glisser-déposer suit désormais une LOGIQUE métier —
+    // • GAGNE : réservé au bouton « Gagner l'Affaire » (création du
+    //   projet + gardes). Le drag vers GAGNE est refusé.
+    // • PERDU : un motif OBLIGATOIRE est demandé et historisé.
+    // • Sortie de GAGNE/PERDU : confirmation explicite.
+    // ══════════════════════════════════════════════════════════
+    if (newStage === 'GAGNE') {
+      alert('Pour gagner cette affaire, utilisez le bouton « Gagner l\'Affaire (Créer Projet) » — il crée le projet et vérifie les doublons.');
+      return;
+    }
+    let extraUpdates: Partial<Prospect> = {};
+    if (newStage === 'PERDU') {
+      const motif = window.prompt('Motif de la perte (obligatoire) :');
+      if (!motif || !motif.trim()) return;
+      extraUpdates = { lossReason: motif.trim() } as any;
+    }
+    if (['GAGNE', 'PERDU'].includes(p.stage)) {
+      const ok = window.confirm(`Ce prospect est « ${p.stage} ». Le replacer dans le pipeline ?`);
+      if (!ok) return;
+    }
+
+    const historyEntry = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      action: `Déplacé de ${p.stage} vers ${newStage}${newStage === 'PERDU' ? ' (perte)' : ''}`,
+      user: currentUser?.firstName + ' ' + currentUser?.lastName
+    };
+    updateProspect(id, {
+      stage: newStage,
+      history: [...(p.history || []), historyEntry],
+      ...extraUpdates,
+    });
+    if (selectedProspect && selectedProspect.id === id) {
+      setSelectedProspect({ ...selectedProspect, stage: newStage, history: [...(selectedProspect.history || []), historyEntry], ...extraUpdates } as Prospect);
     }
   };
 
@@ -664,12 +693,18 @@ export const ProspectionCRM: React.FC = () => {
                   {selectedProspect.qualification === 'CHAUD' && selectedProspect.stage !== 'GAGNE' && (
                     <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-sm mt-6">
                       <p className="text-xs text-emerald-800 mb-3 font-medium">Ce prospect est qualifié "Chaud". Vous pouvez maintenant le convertir en projet officiel.</p>
-                      <button 
+                      <button
                         onClick={async () => {
-                          if (window.confirm("Créer un projet officiel avec ce prospect ?")) {
-                            await convertProspectToProject(selectedProspect.id);
-                            updateProspectField('stage', 'GAGNE', "Prospect gagné et converti en Projet !");
+                          if (!window.confirm("Créer un projet officiel avec ce prospect ?")) return;
+                          // C11 : le RÉSULTAT de la conversion est géré — avant,
+                          // un refus de doublon ou un échec réseau marquait quand
+                          // même le prospect GAGNE avec une alerte de faux succès.
+                          const result = await convertProspectToProject(selectedProspect.id);
+                          if (result) {
                             alert("Prospect converti en Projet avec succès !");
+                            setSelectedProspect(null);
+                          } else {
+                            alert("Conversion non aboutie (doublon refusé ou erreur réseau) — le prospect reste à son étape actuelle.");
                           }
                         }}
                         className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-sm text-sm font-semibold flex justify-center items-center gap-2 transition-colors"

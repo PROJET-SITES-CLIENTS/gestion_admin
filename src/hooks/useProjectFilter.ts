@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Project } from '../types';
 
 export type FilterPeriod = 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'SEMESTER' | 'YEAR';
-export type FilterProgress = 'ALL' | 'NOUVEAU' | 'EN_COURS' | 'TERMINE';
+export type FilterProgress = 'ALL' | 'NOUVEAU' | 'EN_COURS' | 'TERMINE' | 'PAYE' | 'ANNULE';
 export type FilterPayment = 'ALL' | 'PAID' | 'PARTIAL' | 'PENDING';
 
 export interface ProjectFiltersState {
@@ -23,10 +23,13 @@ export function useProjectFilter(projects: Project[]) {
   const filteredProjects = useMemo(() => {
     let result = [...projects];
 
-    // 1. Text Search
+    // 1. Text Search — mineur V2 : la recherche porte aussi sur le client
     if (filters.searchQuery.trim()) {
       const q = filters.searchQuery.toLowerCase();
-      result = result.filter(p => p.name.toLowerCase().includes(q));
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.clientName || '').toLowerCase().includes(q)
+      );
     }
 
     // 2. Period Filter
@@ -62,14 +65,9 @@ export function useProjectFilter(projects: Project[]) {
       });
     }
 
-    // 3. Progress / Evolution Filter
+    // 3. Progress / Evolution Filter — C2 : couvre désormais TOUS les statuts
     if (filters.progress !== 'ALL') {
-      result = result.filter(p => {
-        if (filters.progress === 'NOUVEAU') return p.status === 'NOUVEAU';
-        if (filters.progress === 'EN_COURS') return p.status === 'EN_COURS';
-        if (filters.progress === 'TERMINE') return p.status === 'TERMINE';
-        return true;
-      });
+      result = result.filter(p => p.status === filters.progress);
     }
 
     // 4. Payment Filter

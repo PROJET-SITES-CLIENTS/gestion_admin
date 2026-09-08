@@ -48,16 +48,20 @@ export function ProjectFilterBar({ filters, setFilters, totalResults }: Props) {
           <option value="YEAR">Cette Année</option>
         </select>
 
-        {/* Progress */}
+        {/* Progress — C2 : valeurs alignées sur les statuts réels du modèle
+            (le select émettait STARTING/IN_PROGRESS/COMPLETED que le hook
+            ne testait jamais : le filtre ne faisait RIEN). */}
         <select
           value={filters.progress}
           onChange={e => setFilters(prev => ({ ...prev, progress: e.target.value as FilterProgress }))}
           className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-sm px-3 py-2.5 focus:outline-none focus:border-slate-400 cursor-pointer"
         >
           <option value="ALL">Tout avancement</option>
-          <option value="STARTING">Démarrage / Attente</option>
-          <option value="IN_PROGRESS">En développement</option>
-          <option value="COMPLETED">Terminés</option>
+          <option value="NOUVEAU">Démarrage / Attente</option>
+          <option value="EN_COURS">En développement</option>
+          <option value="TERMINE">Terminés</option>
+          <option value="PAYE">Payés / Clôturés</option>
+          <option value="ANNULE">Annulés</option>
         </select>
 
         {/* Payment */}

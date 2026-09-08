@@ -43,6 +43,10 @@ export default function AccountantSales() {
   const [activeDashboardTab, setActiveDashboardTab] = useState<'PROJECTS' | 'FINANCES'>('PROJECTS');
   const [paymentPanelMode, setPaymentPanelMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
   const [customAmounts, setCustomAmounts] = useState<{ [key: string]: number }>({});
+  // C7/M15 : verrou anti double-clic + choix compte/mode d'encaissement
+  const [paying, setPaying] = useState(false);
+  const [payAccount, setPayAccount] = useState('');
+  const [payMethod, setPayMethod] = useState<'VIREMENT' | 'ESPECES' | 'CHEQUE' | 'MOBILE_MONEY' | 'CARTE'>('VIREMENT');
   
   // Expenses and targets state
     const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'SEMESTER' | 'YEAR' | 'ALL'>('MONTH');
@@ -453,6 +457,31 @@ export default function AccountantSales() {
                     </button>
                   </div>
 
+                  {/* M15 : compte de trésorerie + mode de règlement pour les
+                      encaissements simplifiés (avant : 1er compte + VIREMENT
+                      forcés, quelle que soit la réalité). */}
+                  <div className="bg-white border border-slate-200 rounded-sm p-3 shadow-none flex flex-wrap items-end gap-4">
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">Compte à créditer</label>
+                      <select value={payAccount} onChange={e => setPayAccount(e.target.value)} className="w-full border border-slate-200 rounded-sm p-2 text-sm bg-white cursor-pointer">
+                        <option value="">Par défaut ({treasuryAccounts[0]?.name || 'aucun compte'})</option>
+                        {treasuryAccounts.map(acc => (
+                          <option key={acc.id} value={acc.id}>{acc.name} ({acc.type}) — {acc.balance.toLocaleString('fr-FR')} GNF</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">Mode de règlement</label>
+                      <select value={payMethod} onChange={e => setPayMethod(e.target.value as any)} className="border border-slate-200 rounded-sm p-2 text-sm bg-white cursor-pointer">
+                        <option value="VIREMENT">Virement</option>
+                        <option value="ESPECES">Espèces</option>
+                        <option value="CHEQUE">Chèque</option>
+                        <option value="MOBILE_MONEY">Mobile Money</option>
+                        <option value="CARTE">Carte</option>
+                      </select>
+                    </div>
+                  </div>
+
                   {/* 75% / 25% cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Acompte (75%) card */}
@@ -549,17 +578,20 @@ export default function AccountantSales() {
                               </div>
                             ) : (
                               <button
-                                onClick={() => {
-                                  if (acompte) {
-                                    const amount = customAmounts[`${selectedProject.id}_acompte`] !== undefined ? customAmounts[`${selectedProject.id}_acompte`] : acompte.amount;
-                                    payInstallmentAndGenerateReceipt(selectedProject.id, acompte.id, acompte.name, amount).then(newDoc => {
+                                onClick={async () => {
+                                  if (acompte && !paying) {
+                                    setPaying(true);
+                                    try {
+                                      const amount = customAmounts[`${selectedProject.id}_acompte`] !== undefined ? customAmounts[`${selectedProject.id}_acompte`] : acompte.amount;
+                                      const newDoc = await payInstallmentAndGenerateReceipt(selectedProject.id, acompte.id, acompte.name, amount, payAccount || undefined, payMethod);
                                       if (newDoc) generateReceiptPDF(selectedProject, newDoc, companyConfig);
-                                    });
+                                    } finally { setPaying(false); }
                                   }
                                 }}
-                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-sm text-xs flex items-center justify-center gap-1.5 transition shadow-none shadow-emerald-500/10 cursor-pointer"
+                                disabled={paying}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-sm text-xs flex items-center justify-center gap-1.5 transition shadow-none shadow-emerald-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                <CheckCircle2 size={12} /> Enregistrer le paiement
+                                <CheckCircle2 size={12} /> {paying ? 'Enregistrement…' : 'Enregistrer le paiement'}
                               </button>
                             )}
                           </div>
@@ -720,17 +752,20 @@ export default function AccountantSales() {
                               </div>
                             ) : (
                               <button
-                                onClick={() => {
-                                  if (solde) {
-                                    const amount = customAmounts[`${selectedProject.id}_solde`] !== undefined ? customAmounts[`${selectedProject.id}_solde`] : solde.amount;
-                                    payInstallmentAndGenerateReceipt(selectedProject.id, solde.id, solde.name, amount).then(newDoc => {
+                                onClick={async () => {
+                                  if (solde && !paying) {
+                                    setPaying(true);
+                                    try {
+                                      const amount = customAmounts[`${selectedProject.id}_solde`] !== undefined ? customAmounts[`${selectedProject.id}_solde`] : solde.amount;
+                                      const newDoc = await payInstallmentAndGenerateReceipt(selectedProject.id, solde.id, solde.name, amount, payAccount || undefined, payMethod);
                                       if (newDoc) generateReceiptPDF(selectedProject, newDoc, companyConfig);
-                                    });
+                                    } finally { setPaying(false); }
                                   }
                                 }}
-                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-sm text-xs flex items-center justify-center gap-1.5 transition shadow-none shadow-emerald-500/10 cursor-pointer"
+                                disabled={paying}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-sm text-xs flex items-center justify-center gap-1.5 transition shadow-none shadow-emerald-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                <CheckCircle2 size={12} /> Enregistrer le paiement du solde
+                                <CheckCircle2 size={12} /> {paying ? 'Enregistrement…' : 'Enregistrer le paiement du solde'}
                               </button>
                             )}
                           </div>

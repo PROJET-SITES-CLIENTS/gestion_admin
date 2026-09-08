@@ -11,6 +11,7 @@ export default function ManagerView() {
   const { projects, deleteProject, createUser, systemUsers, fetchSystemUsers, deleteUser, prospects, deleteProspect, activeMenu, companyConfig, updateCompanyConfig, expenses, tasks, notifications, leaveRequests, employees, treasuryAccounts,
     // SYNERGIE C : données BTP intégrées au dashboard gérant
     btpChantiers, btpChantierStats, btpSituations, btpOffres, pushToast,
+    catalogue, addCatalogueItem, updateCatalogueItem, deleteCatalogueItem,
   } = useApp();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   
@@ -95,7 +96,12 @@ export default function ManagerView() {
 
   const handleDeleteUser = async (id: string, username: string) => {
     if (!window.confirm(`Supprimer le compte "${username}" ?`)) return;
-    await deleteUser(id);
+    // M13 : les gardes serveur (dernier gérant, compte admin) sont enfin
+    // AFFICHÉES — avant, l'échec était totalement silencieux.
+    const result = await deleteUser(id);
+    if (result && !result.success) {
+      pushToast(result.error || 'Suppression impossible.', 'ERROR');
+    }
   };
 
   useEffect(() => {
@@ -620,7 +626,26 @@ export default function ManagerView() {
                   type="number" step="0.1"
                   defaultValue={companyConfig.rhRtsAbattement || 20} key={`rts-${companyConfig.rhRtsAbattement}`}
                   onBlur={e => { const v = Number(e.target.value); if (v !== (companyConfig.rhRtsAbattement || 20)) updateCompanyConfig({ rhRtsAbattement: v }); }}
-                  className="input"
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm"
+                />
+              </div>
+              {/* Mineur V2 : le plafond CNSS (T24) et le taux RTS deviennent enfin
+                  éditables — avant, ils étaient lus avec des valeurs par défaut
+                  et le plafond ne s'appliquait JAMAIS. */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Plafond CNSS (GNF, 0 = sans plafond)</label>
+                <input
+                  type="number" min={0} defaultValue={companyConfig.rhCnssCeiling || 0} key={`cnssC-${companyConfig.rhCnssCeiling}`}
+                  onBlur={e => { const v = Math.max(0, Number(e.target.value) || 0); if (v !== (companyConfig.rhCnssCeiling || 0)) updateCompanyConfig({ rhCnssCeiling: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Taux RTS (%)</label>
+                <input
+                  type="number" step="0.1" min={0} max={50} defaultValue={companyConfig.rhRtsRate || 10} key={`rtsR-${companyConfig.rhRtsRate}`}
+                  onBlur={e => { const v = Math.min(50, Math.max(0, Number(e.target.value))); if (v !== (companyConfig.rhRtsRate || 10)) updateCompanyConfig({ rhRtsRate: v }); }}
+                  className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="10"
                 />
               </div>
             </div>
@@ -628,6 +653,85 @@ export default function ManagerView() {
               Ces paramètres sont appliqués automatiquement lors de la génération des bulletins de paie par le module Ressources Humaines.
               Les modifications sont sauvegardées instantanément.
             </p>
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════
+              M12 : Catalogue de services — la direction peut enfin le
+              gérer directement (avant : accessible uniquement en Mode
+              Souverain via la vue Commercial, et sans édition possible).
+              ══════════════════════════════════════════════════════════ */}
+          <div className="mt-8 pt-8 border-t border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Shield size={16} className="text-slate-400" /> Catalogue de Services
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">Articles proposés dans les devis commerciaux.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Désignation</label>
+                <input id="cat-name" className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="Ex : Construction R+2" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Catégorie</label>
+                <input id="cat-cat" className="w-full border-slate-200 border rounded-sm p-2.5 text-sm" placeholder="Général" />
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Prix (GNF)</label>
+                  <input id="cat-price" type="number" min={0} className="w-full border-slate-200 border rounded-sm p-2.5 text-sm font-mono" placeholder="0" />
+                </div>
+                <button
+                  onClick={() => {
+                    const name = (document.getElementById('cat-name') as HTMLInputElement)?.value.trim();
+                    const cat = (document.getElementById('cat-cat') as HTMLInputElement)?.value.trim() || 'Général';
+                    const price = Number((document.getElementById('cat-price') as HTMLInputElement)?.value);
+                    if (!name || !isFinite(price) || price <= 0) { pushToast('Désignation et prix (> 0) requis.', 'ERROR'); return; }
+                    addCatalogueItem({ name, category: cat, description: '', basePrice: price } as any);
+                    (document.getElementById('cat-name') as HTMLInputElement).value = '';
+                    (document.getElementById('cat-cat') as HTMLInputElement).value = '';
+                    (document.getElementById('cat-price') as HTMLInputElement).value = '';
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-sm text-sm font-semibold"
+                >+ Ajouter</button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-xs uppercase text-slate-500">
+                    <th className="py-2 pr-4">Article</th>
+                    <th className="py-2 pr-4">Catégorie</th>
+                    <th className="py-2 pr-4 text-right">Prix</th>
+                    <th className="py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(catalogue || []).map(item => (
+                    <tr key={item.id} className="border-b border-slate-50 text-sm">
+                      <td className="py-2 pr-4 font-medium text-slate-800">{(item as any).name || (item as any).designation}</td>
+                      <td className="py-2 pr-4 text-slate-500">{(item as any).category || '—'}</td>
+                      <td className="py-2 pr-4 text-right font-mono">{((item as any).basePrice || 0).toLocaleString('fr-FR')} GNF</td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => {
+                            const newPrice = window.prompt(`Nouveau prix pour « ${(item as any).name || (item as any).designation} » (GNF) :`, String((item as any).basePrice || 0));
+                            const v = Number(newPrice);
+                            if (newPrice !== null && isFinite(v) && v > 0) updateCatalogueItem(item.id, { basePrice: v } as any);
+                          }}
+                          className="text-indigo-600 hover:underline text-xs font-semibold mr-3"
+                        >Modifier le prix</button>
+                        <button
+                          onClick={() => { if (window.confirm(`Supprimer « ${(item as any).name || (item as any).designation} » du catalogue ?`)) deleteCatalogueItem(item.id); }}
+                          className="text-rose-600 hover:underline text-xs font-semibold"
+                        >Supprimer</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {(!catalogue || catalogue.length === 0) && (
+                    <tr><td colSpan={4} className="py-6 text-center text-slate-400 text-sm">Aucun article au catalogue.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Matrice de permissions BTP (CDC §3.3) */}

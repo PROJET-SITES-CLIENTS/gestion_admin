@@ -333,19 +333,35 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </NavSection>
           )}
 
-          {companyConfig.activeModules?.includes('BTP') && (
-            <NavSection title="Opérations BTP">
-              <NavItem menu="BTP_DASHBOARD" icon={<LayoutDashboard size={17} />} label="Tableau de Bord" />
-              <NavItem menu="BTP_MARCHES" icon={<FileText size={17} />} label="Marchés" />
-              <NavItem menu="BTP_OFFRES" icon={<Briefcase size={17} />} label="Appels d'Offres" />
-              <NavItem menu="BTP_CHANTIERS" icon={<HardHat size={17} />} label="Chantiers" />
-              <NavItem menu="BTP_MAGASIN" icon={<Truck size={17} />} label="Magasin & Achats" />
-              <NavItem menu="BTP_ENGINS" icon={<Truck size={17} />} label="Parc Engins" />
-              <NavItem menu="BTP_QHSE" icon={<ShieldAlert size={17} />} label="QHSE & Sécurité" />
-            </NavSection>
-          )}
+          {/* M3 : la section BTP n'est proposée qu'aux rôles qui ont une raison
+              d'y entrer — avant, l'assistante/commercial voyaient 7 entrées
+              menant à des vues vides. */}
+          {companyConfig.activeModules?.includes('BTP') && currentRole && (() => {
+            const BTP_NAV_ROLES: Record<string, string[]> = {
+              BTP_DASHBOARD: ['GERANT', 'COND_TRAVAUX'],
+              BTP_MARCHES: ['GERANT', 'COMMERCIAL', 'ETUDES', 'COMPTABLE'],
+              BTP_OFFRES: ['GERANT', 'COMMERCIAL', 'ETUDES'],
+              BTP_CHANTIERS: ['GERANT', 'COND_TRAVAUX', 'CHEF_CHANTIER', 'RH'],
+              BTP_MAGASIN: ['GERANT', 'MAGASINIER_BTP', 'RESP_MATERIEL'],
+              BTP_ENGINS: ['GERANT', 'RESP_MATERIEL'],
+              BTP_QHSE: ['GERANT', 'QHSE_BTP'],
+            };
+            const items = [
+              <NavItem key="db" menu="BTP_DASHBOARD" icon={<LayoutDashboard size={17} />} label="Tableau de Bord" />,
+              <NavItem key="ma" menu="BTP_MARCHES" icon={<FileText size={17} />} label="Marchés" />,
+              <NavItem key="of" menu="BTP_OFFRES" icon={<Briefcase size={17} />} label="Appels d'Offres" />,
+              <NavItem key="ch" menu="BTP_CHANTIERS" icon={<HardHat size={17} />} label="Chantiers" />,
+              <NavItem key="mg" menu="BTP_MAGASIN" icon={<Truck size={17} />} label="Magasin & Achats" />,
+              <NavItem key="en" menu="BTP_ENGINS" icon={<Truck size={17} />} label="Parc Engins" />,
+              <NavItem key="qh" menu="BTP_QHSE" icon={<ShieldAlert size={17} />} label="QHSE & Sécurité" />,
+            ];
+            const visibleKeys = Object.entries(BTP_NAV_ROLES).filter(([, roles]) => roles.includes(currentRole)).map(([k]) => k);
+            const visibleItems = items.filter(i => visibleKeys.includes((i.props as any).menu));
+            if (visibleItems.length === 0) return null;
+            return <NavSection title="Opérations BTP">{visibleItems}</NavSection>;
+          })()}
 
-          {companyConfig.activeModules?.includes('AGRO') && (
+          {companyConfig.activeModules?.includes('AGRO') && ['GERANT', 'RESP_PRODUCTION', 'RESP_QUALITE', 'RESP_AGRO', 'RESP_STOCKAGE', 'RESP_TRACABILITE'].includes(currentRole || '') && (
             <NavSection title="Filière Agro">
               <NavItem menu="AGRO_APPRO" icon={<Truck size={17} />} label="Appro & Stocks" />
               <NavItem menu="AGRO_PROD" icon={<Factory size={17} />} label="Prod & Qualité" />
@@ -498,7 +514,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                       myNotifications.slice(0, 12).map((n: any) => (
                         <button
                           key={n.id}
-                          onClick={() => { if (!n.isRead) markNotificationAsRead(n.id); }}
+                          onClick={() => {
+                            if (!n.isRead) markNotificationAsRead(n.id);
+                            // M14 : le link d'une notification mène au dossier
+                            // concerné (relances → pipeline/detail selon le rôle).
+                            if (n.link) {
+                              setActiveMenu(currentRole === 'GERANT' ? 'PIPELINE' : currentRole === 'COMMERCIAL' ? 'DASHBOARD' : 'TASKS');
+                              setShowNotifs(false);
+                            }
+                          }}
                           className={`w-full text-left p-3.5 border-b border-slate-50 flex gap-3 transition-colors hover:bg-slate-50 ${!n.isRead ? 'bg-indigo-50/30' : 'opacity-75'}`}
                         >
                           <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${
